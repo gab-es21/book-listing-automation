@@ -12,30 +12,23 @@ app = typer.Typer(help="Book Listing Automation")
 
 @app.command()
 def initdb():
-    """Cria as tabelas no Supabase/Postgres"""
     init_db()
     print("[green]DB pronta.[/green]")
 
 @app.command()
 def group():
-    """Agrupa últimas fotos em photos_grouped/book_xxx"""
     group_last_set()
 
 @app.command()
 def describe(folder: str):
-    """Gera descrição e preço a partir da pasta de fotos"""
     meta = describe_book_from_folder(Path(folder))
     print(meta)
 
 @app.command()
-def vinted(folder: str, headless: bool = False, upload_storage: bool = True):
-    """
-    Publica no Vinted e guarda no Supabase (DB).
-    Opcionalmente sobe as fotos ao Storage.
-    """
+def vinted(folder: str, headless: bool = False, upload_storage: bool = False):
     init_db()
     folder_path = Path(folder)
-    meta = describe_book_from_folder(folder_path)
+    meta = describe_book_from_folder(folder_path)  # usa upload temp + cleanup
     url = post_vinted(folder_path, meta, headless=headless)
     if not url:
         print("[red]Falha a obter URL do anúncio.[/red]")
@@ -52,7 +45,7 @@ def vinted(folder: str, headless: bool = False, upload_storage: bool = True):
         )
         s.add(book); s.flush()
 
-        # Storage (opcional)
+        # opcional: guardar fotos permanentemente (normalmente False p/ não gastar quota)
         if upload_storage:
             slug = folder_path.name
             try:
@@ -67,16 +60,12 @@ def vinted(folder: str, headless: bool = False, upload_storage: bool = True):
     print(f"[green]Publicado:[/green] {url}")
 
 @app.command()
-def full(headless: bool = False, upload_storage: bool = True):
-    """
-    Agrupa -> Descreve -> Publica no Vinted -> 
-    Sobe fotos (Storage) -> Persiste no DB (Supabase).
-    """
+def full(headless: bool = False, upload_storage: bool = False):
     init_db()
     dest = group_last_set()
     if not dest:
         return
-    meta = describe_book_from_folder(dest)
+    meta = describe_book_from_folder(dest)  # upload temp + cleanup
     url = post_vinted(dest, meta, headless=headless)
     if not url:
         print("[red]Falha a publicar no Vinted.[/red]")
