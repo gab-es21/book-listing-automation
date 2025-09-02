@@ -1,0 +1,7 @@
+.venv/*
+__pycache__/
+*.pyc
+.env
+photos_raw/
+photos_grouped/
+selenium-screenshots/
