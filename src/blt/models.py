@@ -15,6 +15,7 @@ class Book(Base):
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     listings: Mapped[list["Listing"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    photos: Mapped[list["BookPhoto"]] = relationship(back_populates="book", cascade="all, delete-orphan")
 
 class Listing(Base):
     __tablename__ = "listings"
@@ -26,3 +27,12 @@ class Listing(Base):
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     book: Mapped[Book] = relationship(back_populates="listings")
+
+class BookPhoto(Base):
+    __tablename__ = "book_photos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"))
+    url: Mapped[str] = mapped_column(String(1024))
+    idx: Mapped[int] = mapped_column(Integer)  # ordem (1,2,3...)
+
+    book: Mapped[Book] = relationship(back_populates="photos")

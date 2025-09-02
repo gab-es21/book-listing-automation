@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 .env
+.editorconfig
+.gitattributes
 photos_raw/
 photos_grouped/
 selenium-screenshots/
+src/blt.egg-info/

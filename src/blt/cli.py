@@ -1,33 +1,38 @@
 import typer
 from pathlib import Path
 from rich import print
-from .config import settings
 from .db import SessionLocal, init_db
-from .models import Book, Listing
+from .models import Book, Listing, BookPhoto
 from .group_photos import group_last_set
 from .describe_book import describe_book_from_folder
 from .post_vinted import post_vinted
+from .storage import upload_photos_and_get_urls
 
 app = typer.Typer(help="Book Listing Automation")
 
 @app.command()
 def initdb():
+    """Cria as tabelas no Supabase/Postgres"""
     init_db()
     print("[green]DB pronta.[/green]")
 
 @app.command()
 def group():
-    """Agrupa as últimas N fotos (N=.env PHOTOS_PER_BOOK) numa pasta book_XXX em photos_grouped/."""
+    """Agrupa últimas fotos em photos_grouped/book_xxx"""
     group_last_set()
 
 @app.command()
 def describe(folder: str):
+    """Gera descrição e preço a partir da pasta de fotos"""
     meta = describe_book_from_folder(Path(folder))
     print(meta)
 
 @app.command()
-def vinted(folder: str, headless: bool = False):
-    """Publica no Vinted e guarda no DB."""
+def vinted(folder: str, headless: bool = False, upload_storage: bool = True):
+    """
+    Publica no Vinted e guarda no Supabase (DB).
+    Opcionalmente sobe as fotos ao Storage.
+    """
     init_db()
     folder_path = Path(folder)
     meta = describe_book_from_folder(folder_path)
@@ -45,15 +50,28 @@ def vinted(folder: str, headless: bool = False):
             status="available",
             folder_path=str(folder_path),
         )
-        s.add(book)
-        s.flush()
+        s.add(book); s.flush()
+
+        # Storage (opcional)
+        if upload_storage:
+            slug = folder_path.name
+            try:
+                urls = upload_photos_and_get_urls(folder_path, slug)
+                for idx, u in enumerate(urls, start=1):
+                    s.add(BookPhoto(book_id=book.id, url=u, idx=idx))
+            except Exception as e:
+                print(f"[yellow]Aviso: upload Storage falhou: {e}[/yellow]")
+
         s.add(Listing(book_id=book.id, platform="vinted", listing_url=url, status="posted"))
         s.commit()
     print(f"[green]Publicado:[/green] {url}")
 
 @app.command()
-def full(headless: bool = False):
-    """Agrupa -> Descreve -> Publica no Vinted -> Persiste no DB."""
+def full(headless: bool = False, upload_storage: bool = True):
+    """
+    Agrupa -> Descreve -> Publica no Vinted -> 
+    Sobe fotos (Storage) -> Persiste no DB (Supabase).
+    """
     init_db()
     dest = group_last_set()
     if not dest:
@@ -63,8 +81,7 @@ def full(headless: bool = False):
     if not url:
         print("[red]Falha a publicar no Vinted.[/red]")
         return
-    from .db import SessionLocal
-    from .models import Book, Listing
+
     with SessionLocal() as s:
         book = Book(
             title=meta["title"],
@@ -75,6 +92,16 @@ def full(headless: bool = False):
             folder_path=str(dest),
         )
         s.add(book); s.flush()
+
+        if upload_storage:
+            slug = dest.name
+            try:
+                urls = upload_photos_and_get_urls(dest, slug)
+                for idx, u in enumerate(urls, start=1):
+                    s.add(BookPhoto(book_id=book.id, url=u, idx=idx))
+            except Exception as e:
+                print(f"[yellow]Aviso: upload Storage falhou: {e}[/yellow]")
+
         s.add(Listing(book_id=book.id, platform="vinted", listing_url=url, status="posted"))
         s.commit()
     print(f"[green]OK:[/green] {url}")
