@@ -7,13 +7,18 @@ from openai import OpenAI
 
 from .config import settings
 from .storage import upload_paths_get_signed_urls, delete_objects
+from .heic_convert import convert_folder as convert_heic_folder
 
 ISBN_RE = re.compile(r"\b(?:97[89][-\s]?)?\d{1,5}[-\s]?\d{1,7}[-\s]?\d{1,7}[-\s]?[\dxX]\b")
 
 def _select_images(folder: Path, max_images: int) -> List[Path]:
-    imgs = [p for p in folder.glob("*") if p.suffix.lower() in {".jpg",".jpeg",".png",".webp"}]
+    IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+    imgs = [p for p in folder.glob("*") if p.suffix.lower() in IMG_EXTS]
     imgs.sort()  # 01, 02, ...
+    if not imgs:
+        raise FileNotFoundError(f"Sem imagens em {folder}. Coloca .jpg/.png/.heic e volta a tentar.")
     return imgs[:max_images]
+
 
 def _image_parts_with_temp_urls(folder: Path) -> tuple[list[dict], list[str]]:
     """
@@ -106,6 +111,11 @@ def _suggest_price(folder: Path) -> float:
     return round(max(settings.PRICE_MIN, 5) + settings.PRICE_MARGIN_EUR, 2)
 
 def describe_book_from_folder(folder: Path) -> dict:
+    # ⬇️ Convert any HEIC/HEIF in-place to JPEG before we proceed
+    try:
+        convert_heic_folder(folder, recursive=False, delete_src=True, quality=settings.VISION_JPEG_QUALITY)
+    except Exception:
+        pass
     vision = _vision_extract(folder)
     gb = _google_books(vision["isbn"]) if vision.get("isbn") else None
 
