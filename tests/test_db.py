@@ -64,3 +64,19 @@ def test_sync_ignores_non_book_folders(tmp_path, temp_db):
 def test_sync_missing_dir_returns_zero(tmp_path, temp_db):
     added = db.sync_pending_books(tmp_path / "does_not_exist")
     assert added == 0
+
+
+def test_portuguese_characters_survive_a_real_roundtrip(temp_db):
+    """Guards against mojibake: title/description with ç/ã/õ/é must come back byte-identical."""
+    title = "Uma Obsessão Indecente"
+    description = "Edição em bom estado. Entrega em mão na Covilhã, senão Correio."
+
+    with temp_db() as s:
+        s.add(Book(folder_path="x", title=title, description=description))
+        s.commit()
+
+    # fresh session forces an actual read back through SQLite, not just the cached object
+    with temp_db() as s:
+        b = s.execute(select(Book)).scalar_one()
+        assert b.title == title
+        assert b.description == description
