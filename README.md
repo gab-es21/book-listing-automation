@@ -27,16 +27,17 @@ flowchart TD
     I --> J["DB: save fields\n(still status = pending)"]
 
     J --> K["blt review\nlocal FastAPI page"]
+    Z --> K
     K --> L["You: copy fields,\ncreate the listing on\nVinted by hand"]
     L --> M["Click Next →\nDB: status = available"]
+    M --> N["blt review /available\nMark 1 sold, per copy"]
+    N -->|"quantity > 0"| N
+    N -->|"quantity = 0"| O["DB: status = sold_out"]
 
-    class A,B,C,D,E,F,G,H1,I,J done
-    class K,L,M todo
+    class A,B,C,D,E,F,G,H1,I,J,K,L,M,N,O done
     class Z failed
 
     classDef done fill:#2f9e44,color:#fff,stroke:#2f9e44
-    classDef building fill:#e8a83b,color:#111,stroke:#e8a83b
-    classDef todo fill:#868e96,color:#fff,stroke:#868e96
     classDef failed fill:#c92a2a,color:#fff,stroke:#c92a2a
 ```
 
@@ -52,7 +53,7 @@ flowchart TD
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | 🟢 done |
 | [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | 🟢 done |
-| [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | ⚪ not started |
+| [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | 🟡 in progress |
 | [#8](https://github.com/gab-es21/book-listing-automation/issues/8) | Cleanup old Vinted-automation/Supabase code | 🟢 done |
 
 ## Fixed by design (not extracted, not automated)
@@ -75,6 +76,14 @@ Google Books was tried first and dropped: its anonymous tier's daily quota was e
 
 Almedina doesn't carry every book, and not every barcode photo decodes cleanly (glare, blur, a bent spine). Either case leaves a book at `status = failed` instead of a guessed title/author. This is expected, not a bug — the review step (#7) will surface these separately so you can type in the missing fields by hand instead of trusting an unreliable guess.
 
+## Local review page
+
+`blt review` starts a small FastAPI app bound to `localhost` only:
+
+- `/` shows the oldest book still `pending` or `failed`, one at a time, with both photos inline and an editable copy-paste form in the order you'd actually fill Vinted's own: **ISBN first** (pasting it alone auto-fills title/author/language on Vinted's side), then title/author/description/price/quantity. `failed` books get the same form with blank title/author for manual entry. A static reminder covers Category/Condition/Language, since those are picked by hand and never stored here. Clicking **Next** saves your edits and marks the book `available` - it means "I already created the real Vinted listing."
+- `/previous` shows the most-recently-reviewed book as a safety net, with a way to send it back to `pending` if you catch a mistake.
+- `/available` lists every listed book with its remaining `quantity` and a **Mark 1 sold** button - `quantity` isn't a Vinted field (each physical copy still needs its own separate listing there), it's this tool's own stock counter: decrementing it flips the book to `status = sold_out` once it hits zero.
+
 ## Setup
 
 1. `pip install -r requirements.txt`
@@ -89,7 +98,7 @@ Almedina doesn't carry every book, and not every barcode photo decodes cleanly (
 | `blt group-all` | sort+pair everything in `photos_raw/` into `photos_grouped/book_NNN/` |
 | `blt convert-heic PATH` | convert HEIC/HEIF photos to JPEG in place |
 | `blt extract [--limit N]` | run barcode+Almedina extraction on pending books missing data; unresolved ones are marked `failed` |
-| `blt review` | *(planned, #7)* open the local copy-paste review page |
+| `blt review [--host] [--port]` | open the local review page (`/` to review pending/failed books, `/available` to track sales) |
 
 ## Testing
 

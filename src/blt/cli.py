@@ -33,6 +33,14 @@ def extract(limit: int = typer.Option(None, help="Limite de livros a processar (
     result = extract_pending_books(limit=limit)
     print(f"[green]{result['resolved']} resolvido(s), {result['failed']} marcado(s) como failed.[/green]")
 
+@app.command()
+def review(host: str = "127.0.0.1", port: int = 8000):
+    """Abre a página local de revisão (copy-paste para o Vinted)."""
+    import uvicorn
+    from .review_app import app as review_app
+    print(f"[green]A abrir em http://{host}:{port}[/green]")
+    uvicorn.run(review_app, host=host, port=port)
+
 @app.command("convert-heic")
 def convert_heic(path: str, recursive: bool = True, delete_src: bool = True):
     """Convert all .heic/.heif under PATH to .jpg (deletes originals by default)."""

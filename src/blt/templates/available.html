@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>blt review - disponíveis</title>
+<style>
+  body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ddd; }
+  button { font-size: 0.9rem; padding: 0.3rem 0.7rem; cursor: pointer; }
+  nav { margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<nav><a href="/">&larr; rever livros pendentes</a></nav>
+
+<h1>Livros disponíveis</h1>
+
+{% if books %}
+<table>
+  <tr><th>Título</th><th>ISBN</th><th>Preço</th><th>Restam</th><th></th></tr>
+  {% for book in books %}
+  <tr>
+    <td>{{ book.title or "(sem título)" }}</td>
+    <td>{{ book.isbn or "-" }}</td>
+    <td>{{ "%.2f"|format(book.price) if book.price is not none else "-" }} €</td>
+    <td>{{ book.quantity }}</td>
+    <td>
+      <form method="post" action="/sold/{{ book.id }}">
+        <button type="submit">Marcar 1 vendido</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>Nenhum livro disponível ainda.</p>
+{% endif %}
+</body>
+</html>
