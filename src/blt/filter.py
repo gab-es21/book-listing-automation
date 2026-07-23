@@ -83,7 +83,21 @@ def extract_title_author(cover_text: str) -> dict:
         data = json.loads(r.json()["response"])
     except (KeyError, ValueError) as e:
         raise FilterError(f"Resposta inesperada do Ollama: {e} - {r.text[:300]}")
-    return {"title": data.get("title") or None, "author": data.get("author") or None}
+    return {"title": _clean_field(data.get("title")), "author": _clean_field(data.get("author"))}
+
+
+def _clean_field(value) -> str | None:
+    """
+    Normalizes a filter-model field to None when empty/missing/whitespace, or
+    when the model emits the literal word "null"/"none" as a JSON *string*
+    instead of the actual JSON null (observed in practice with phi4-mini).
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or value.lower() in ("null", "none", "n/a"):
+        return None
+    return value
 
 
 def filter_book_fields(cover_text: str, isbn_text: str) -> dict:
