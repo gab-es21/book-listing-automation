@@ -13,13 +13,9 @@ class Settings(BaseSettings):
     OLLAMA_VISION_MODEL: str = "gemma3:4b"
     OLLAMA_FILTER_MODEL: str = "phi4-mini"
 
-    # Info fixa usada para compor a descrição (categoria/condição/idioma são
-    # sempre os mesmos e escolhidos à mão no Vinted, por isso não são geridos aqui)
-    SELLER_LOCATION: str | None = None
-    SELLER_SHIPPING: str | None = None
-
-    PRICE_MIN: float = 5.0
-    PRICE_MARGIN_EUR: float = 2.0
+    # Preço fixo (sem negociação mencionada na descrição - é tratada à parte,
+    # e o transporte é gerido pelo próprio Vinted, não é referido aqui)
+    BOOK_PRICE_EUR: float = 7.0
 
     # Redimensionamento de imagens antes de enviar ao modelo de visão local
     VISION_MAX_SIDE: int = 1280
