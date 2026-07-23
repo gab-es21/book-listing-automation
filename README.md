@@ -30,8 +30,7 @@ flowchart TD
     K --> L["You: copy fields,\ncreate the listing on\nVinted by hand"]
     L --> M["Click Next →\nDB: status = available"]
 
-    class A,B,C,D,E,F,G,H1,I done
-    class J building
+    class A,B,C,D,E,F,G,H1,I,J done
     class K,L,M todo
     class Z failed
 
@@ -52,7 +51,7 @@ flowchart TD
 | [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | 🟢 done |
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | 🟢 done |
-| [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | 🟡 in progress |
+| [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | 🟢 done |
 | [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | ⚪ not started |
 | [#8](https://github.com/gab-es21/book-listing-automation/issues/8) | Cleanup old Vinted-automation/Supabase code | 🟢 done |
 
