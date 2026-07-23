@@ -8,25 +8,20 @@ class Settings(BaseSettings):
     DB_URL: str = "sqlite:///./blt.db"
     TZ: str = "Europe/Lisbon"
 
-    OPENAI_API_KEY: str | None = None
-    OPENAI_MODEL: str | None = None  # ex: gpt-4o-mini
+    # Local vision extraction (Ollama - no cloud dependency)
+    OLLAMA_HOST: str = "http://localhost:11434"
+    OLLAMA_VISION_MODEL: str = "gemma3:4b"
+    OLLAMA_FILTER_MODEL: str = "llama3.2:3b"
 
-    VINTED_EMAIL: str | None = None
-    VINTED_PASSWORD: str | None = None
-    VINTED_LOCATION: str | None = None
-    VINTED_SHIPPING: str | None = None
+    # Info fixa usada para compor a descrição (categoria/condição/idioma são
+    # sempre os mesmos e escolhidos à mão no Vinted, por isso não são geridos aqui)
+    SELLER_LOCATION: str | None = None
+    SELLER_SHIPPING: str | None = None
 
     PRICE_MIN: float = 5.0
     PRICE_MARGIN_EUR: float = 2.0
 
-    SUPABASE_URL: str | None = None
-    SUPABASE_SERVICE_ROLE_KEY: str | None = None
-    SUPABASE_BUCKET: str = "books"
-
-    # Vision (upload temporário)
-    VISION_MAX_IMAGES: int = 2
-    VISION_UPLOAD_PREFIX: str = "vision"
-    VISION_SIGNED_URL_TTL: int = 300
+    # Redimensionamento de imagens antes de enviar ao modelo de visão local
     VISION_MAX_SIDE: int = 1280
     VISION_JPEG_QUALITY: int = 85
 

@@ -1,38 +1,21 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, DateTime, Float, Integer, Text, ForeignKey, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String, DateTime, Float, Integer, Text, func
 
 class Base(DeclarativeBase): pass
 
+# status: pending (grouped, not yet reviewed/listed) -> available (listed on
+# Vinted) -> sold_out. Category/condition/language aren't tracked here - they
+# never vary and are picked by hand in Vinted's own UI.
 class Book(Base):
     __tablename__ = "books"
     id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str] = mapped_column(Text)
-    price: Mapped[float] = mapped_column(Float)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    isbn: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
-    status: Mapped[str] = mapped_column(String(32), default="available")
-    folder_path: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    folder_path: Mapped[str] = mapped_column(String(512), unique=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    listings: Mapped[list["Listing"]] = relationship(back_populates="book", cascade="all, delete-orphan")
-    photos: Mapped[list["BookPhoto"]] = relationship(back_populates="book", cascade="all, delete-orphan")
-
-class Listing(Base):
-    __tablename__ = "listings"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"))
-    platform: Mapped[str] = mapped_column(String(32))
-    listing_url: Mapped[str] = mapped_column(String(1024), default="")
-    status: Mapped[str] = mapped_column(String(32), default="posted")
-    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    book: Mapped[Book] = relationship(back_populates="listings")
-
-class BookPhoto(Base):
-    __tablename__ = "book_photos"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"))
-    url: Mapped[str] = mapped_column(String(1024))
-    idx: Mapped[int] = mapped_column(Integer)  # ordem (1,2,3...)
-
-    book: Mapped[Book] = relationship(back_populates="photos")
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
