@@ -12,7 +12,14 @@ tripped a rate-limit/block even with a respectful pace - real usage (one
 lookup every few minutes as you process each book) should stay well under
 whatever that threshold is, but if it becomes a recurring problem, worth
 asking their team to allowlist this kind of light personal use.
+
+A small random delay is applied before every request, here rather than in
+any particular caller, so this module protects itself regardless of who's
+calling it (the batch extractor, a one-off debug script, anything else).
 """
+import random
+import time
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -30,6 +37,7 @@ class AlmedinaLookupError(RuntimeError):
 
 def lookup_by_isbn(isbn: str) -> dict | None:
     """Returns {"title", "author"} or None if not found on Almedina."""
+    time.sleep(random.uniform(0.5, 1.5))
     try:
         r = requests.get(SEARCH_URL, params={"q": isbn}, headers=HEADERS, timeout=15)
         r.raise_for_status()

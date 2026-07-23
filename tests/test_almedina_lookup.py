@@ -35,6 +35,8 @@ _NOT_FOUND_HTML = """
 
 
 def test_found_book_extracts_title_and_author(monkeypatch):
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: None)
+
     def fake_get(url, params, headers, timeout):
         assert params["q"] == "9789896689704"
         assert "User-Agent" in headers
@@ -48,12 +50,14 @@ def test_found_book_extracts_title_and_author(monkeypatch):
 
 
 def test_not_found_returns_none(monkeypatch):
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, _NOT_FOUND_HTML))
 
     assert al.lookup_by_isbn("9780000000002") is None
 
 
 def test_no_author_link_returns_none_author(monkeypatch):
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: None)
     html = '<html><body><h1 itemprop="name">Some Title</h1></body></html>'
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, html))
 
@@ -63,6 +67,8 @@ def test_no_author_link_returns_none_author(monkeypatch):
 
 
 def test_network_failure_raises_almedina_lookup_error(monkeypatch):
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: None)
+
     def fake_get(*a, **k):
         raise requests.ConnectionError("nope")
 
@@ -73,7 +79,19 @@ def test_network_failure_raises_almedina_lookup_error(monkeypatch):
 
 
 def test_http_error_raises_almedina_lookup_error(monkeypatch):
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(403, "Forbidden"))
 
     with pytest.raises(al.AlmedinaLookupError):
         al.lookup_by_isbn("9789896689704")
+
+
+def test_sleeps_a_small_random_delay_before_every_request(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(al.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, _PRODUCT_PAGE_HTML))
+
+    al.lookup_by_isbn("9789896689704")
+
+    assert len(sleeps) == 1
+    assert 0.5 <= sleeps[0] <= 1.5

@@ -93,6 +93,56 @@ def test_available_list_shows_available_books(temp_db):
     assert ">3<" in r.text
 
 
+def test_available_search_matches_title_isbn_or_author(temp_db):
+    _add_book(temp_db, folder_path="a", status="available", title="Sempre Tu", isbn="111", author="Colleen Hoover")
+    _add_book(temp_db, folder_path="b", status="available", title="Outro Livro", isbn="9789896689704", author="Autor B")
+    _add_book(temp_db, folder_path="c", status="available", title="Terceiro", isbn="333", author="Autor C")
+
+    by_title = client.get("/available", params={"q": "Sempre"}).text
+    by_isbn = client.get("/available", params={"q": "9789896689704"}).text
+    by_author = client.get("/available", params={"q": "Autor C"}).text
+
+    assert "Sempre Tu" in by_title and "Outro Livro" not in by_title
+    assert "Outro Livro" in by_isbn and "Sempre Tu" not in by_isbn
+    assert "Terceiro" in by_author and "Sempre Tu" not in by_author
+
+
+def test_available_sort_by_price_ascending_and_descending(temp_db):
+    _add_book(temp_db, folder_path="cheap", status="available", title="Cheap", price=3.0)
+    _add_book(temp_db, folder_path="mid", status="available", title="Mid", price=7.0)
+    _add_book(temp_db, folder_path="expensive", status="available", title="Expensive", price=12.0)
+
+    asc = client.get("/available", params={"sort": "price", "dir": "asc"}).text
+    desc = client.get("/available", params={"sort": "price", "dir": "desc"}).text
+
+    assert asc.index("Cheap") < asc.index("Mid") < asc.index("Expensive")
+    assert desc.index("Expensive") < desc.index("Mid") < desc.index("Cheap")
+
+
+def test_available_default_pagination_is_20_per_page(temp_db):
+    with temp_db() as s:
+        for i in range(25):
+            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
+        s.commit()
+
+    r = client.get("/available")
+
+    assert "Página 1 de 2" in r.text
+    assert r.text.count("Marcar 1 vendido") == 20
+
+
+def test_available_view_all_shows_everything_without_pagination(temp_db):
+    with temp_db() as s:
+        for i in range(25):
+            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
+        s.commit()
+
+    r = client.get("/available", params={"view": "all"})
+
+    assert r.text.count("Marcar 1 vendido") == 25
+    assert "Página" not in r.text
+
+
 def test_mark_sold_decrements_quantity(temp_db):
     book_id = _add_book(temp_db, folder_path="book_stock", status="available", quantity=2)
 
@@ -105,7 +155,7 @@ def test_mark_sold_decrements_quantity(temp_db):
 
 
 def test_mark_sold_flips_to_sold_out_at_zero(temp_db):
-    book_id = _add_book(temp_db, folder_path="book_last", status="available", quantity=1)
+    book_id = _add_book(temp_db, folder_path="book_last", status="available", quantity=1, title="Last Copy")
 
     client.post(f"/sold/{book_id}")
 
@@ -115,15 +165,21 @@ def test_mark_sold_flips_to_sold_out_at_zero(temp_db):
         assert book.status == "sold_out"
 
     r = client.get("/available")
-    assert "book_last" not in r.text
+    assert "Last Copy" in r.text  # stays visible, just marked sold out
+    assert "Esgotado" in r.text
+    assert "Marcar 1 vendido" not in r.text  # no sell button left for a sold-out book
 
 
-def test_sold_out_book_does_not_appear_in_available_list(temp_db):
-    book_id = _add_book(temp_db, folder_path="book_gone", status="sold_out", quantity=0, title="Gone")
+def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
+    _add_book(temp_db, folder_path="book_gone", status="sold_out", quantity=0, title="Gone")
+    _add_book(temp_db, folder_path="book_here", status="available", quantity=1, title="Zzz Still Here")
 
     r = client.get("/available")
 
-    assert "Gone" not in r.text
+    assert "Gone" in r.text
+    assert "Esgotado" in r.text
+    # sold-out sorts after available even though "Gone" < "Zzz..." alphabetically
+    assert r.text.index("Zzz Still Here") < r.text.index("Gone")
 
 
 def test_previous_returns_404_when_nothing_available_yet(temp_db):
