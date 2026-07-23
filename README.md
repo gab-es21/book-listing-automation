@@ -27,7 +27,8 @@ flowchart TD
     K --> L["Click Next →\nDB: status = available"]
 
     class A,B,C,D,E,F done
-    class G,H,I building
+    class G done
+    class H,I building
     class J,K,L todo
 
     classDef done fill:#2f9e44,color:#fff,stroke:#2f9e44
@@ -44,7 +45,7 @@ flowchart TD
 | [#1](https://github.com/gab-es21/book-listing-automation/issues/1) | Photo intake: sort & pair into cover/back folders | 🟢 done |
 | [#2](https://github.com/gab-es21/book-listing-automation/issues/2) | SQLite schema & book status state machine | 🟢 done |
 | [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | 🟢 done |
-| [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | ⚪ not started |
+| [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | ⚪ not started |
 | [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | ⚪ not started |
 | [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | ⚪ not started |
@@ -53,6 +54,10 @@ flowchart TD
 ## Fixed by design (not extracted, not automated)
 
 Category, condition, and language are always the same for every listing, so the tool never tries to detect or set them — pick them by hand in Vinted's UI each time. Pasting a valid ISBN into Vinted's own form auto-fills title/author/language there too, which is why ISBN is the single highest-value thing for the vision step to get right.
+
+## Known limitation: extraction is best-effort, not authoritative
+
+Small local models aren't perfectly reliable — across real testing, the ISBN reader nailed a valid 13-digit number (checksum-verified) but title/author extraction occasionally missed or misread the actual title, especially when the cover transcription step didn't clearly capture it in the first place. This is exactly why the review step (#7) shows editable fields rather than auto-submitting anything — you're always meant to glance at the extracted data before pasting it, not trust it blindly.
 
 ## Setup
 

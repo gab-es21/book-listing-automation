@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # Local vision extraction (Ollama - no cloud dependency)
     OLLAMA_HOST: str = "http://localhost:11434"
     OLLAMA_VISION_MODEL: str = "gemma3:4b"
-    OLLAMA_FILTER_MODEL: str = "llama3.2:3b"
+    OLLAMA_FILTER_MODEL: str = "phi4-mini"
 
     # Info fixa usada para compor a descrição (categoria/condição/idioma são
     # sempre os mesmos e escolhidos à mão no Vinted, por isso não são geridos aqui)
