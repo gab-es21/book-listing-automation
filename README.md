@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/gab-es21/book-listing-automation/actions/workflows/tests.yml/badge.svg)
 
-CLI + local web tool that helps list used books for sale on Vinted: take phone photos, read title/author/ISBN off the covers with a **local, offline vision model**, and get a simple review page to copy the info into Vinted and track what's been listed. Nothing touches Vinted programmatically — you create the actual listing by hand.
+CLI + local web tool that helps list used books for sale on Vinted: take phone photos, decode the ISBN barcode and **look up title/author deterministically** (barcode + bookstore site search, no guessing), and get a simple review page to copy the info into Vinted and track what's been listed. Nothing touches Vinted programmatically — you create the actual listing by hand.
 
 ## Why not automate the Vinted posting itself?
 
@@ -17,28 +17,28 @@ flowchart TD
     C --> D["📁 photos_grouped/book_NNN/\ncover.jpg + isbn.jpg"]
     D --> E["DB: insert Book row\nstatus = pending"]
 
-    E --> F["Decode ISBN barcode\n(pyzbar - deterministic, no LLM)"]
+    E --> F["Decode ISBN barcode\n(pyzbar - deterministic)"]
     F -->|"barcode found"| G["Look up ISBN on Almedina\n(PT bookstore site search)"]
-    G -->|"found"| H1["title/author = lookup result\n(skips vision entirely)"]
-    G -->|"not found"| F2
-    F -->|"no barcode"| F2["Ollama (gemma3:4b) reads\ncover + ISBN close-up"]
-    F2 --> G2["Filter raw text →\ntitle / author\n(isbn: regex + checksum)"]
+    G -->|"found"| H1["title/author = lookup result"]
+    G -->|"not found"| Z["DB: status = failed\n(ISBN kept if we have one -\nfill in title/author by hand)"]
+    F -->|"no barcode"| Z
 
     H1 --> I["Compose PT description\n+ suggested price"]
-    G2 --> I
     I --> J["DB: save fields\n(still status = pending)"]
 
     J --> K["blt review\nlocal FastAPI page"]
     K --> L["You: copy fields,\ncreate the listing on\nVinted by hand"]
     L --> M["Click Next →\nDB: status = available"]
 
-    class A,B,C,D,E,F,G,H1,F2,G2,I done
+    class A,B,C,D,E,F,G,H1,I done
     class J building
     class K,L,M todo
+    class Z failed
 
     classDef done fill:#2f9e44,color:#fff,stroke:#2f9e44
     classDef building fill:#e8a83b,color:#111,stroke:#e8a83b
     classDef todo fill:#868e96,color:#fff,stroke:#868e96
+    classDef failed fill:#c92a2a,color:#fff,stroke:#c92a2a
 ```
 
 🟢 done · 🟡 in progress · ⚪ not started yet
@@ -64,22 +64,23 @@ Price is a flat `BOOK_PRICE_EUR` (default €7) for every book - not computed, n
 
 ## ISBN-first extraction strategy
 
-Live testing showed the local vision model reading fine print (barcodes, small ISBN text) unreliably enough to matter, so ISBN doesn't rely on OCR at all: `pyzbar` decodes the actual EAN-13 barcode from the ISBN close-up photo - a solved, deterministic computer-vision problem, not a guess. A successful decode already implies a valid checksum (the EAN-13 standard requires it).
+There's no reliable alternative to a real ISBN, so this doesn't try to guess one: `pyzbar` decodes the actual EAN-13 barcode from the ISBN close-up photo - a solved, deterministic computer-vision problem, not OCR. A successful decode already implies a valid checksum (the EAN-13 standard requires it).
 
-Once we have a real ISBN, we look it up rather than trust whatever's readable on the cover: **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal low-volume use only, honest self-identifying User-Agent, not for bulk scraping). Only when the barcode is missing/unreadable, or the lookup doesn't find the ISBN, does it fall back to the local vision model reading the cover + a text-filter step - which is where remaining unreliability lives (see below).
+Once we have a real ISBN, we look it up on **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal low-volume use only, honest self-identifying User-Agent, not for bulk scraping).
+
+If the barcode can't be decoded, or Almedina doesn't have that ISBN, the book is **not** guessed at via a vision model reading the cover — it's marked `status = failed` and left for you to fill in by hand. Live testing showed small local vision models misreading fine print often enough that trusting them wasn't worth it; a barcode is either read correctly or not read at all, so "give up and ask a human" beats "confidently guess wrong." If a barcode was decoded but the lookup came up empty, that ISBN is still saved - pasting a valid ISBN into Vinted's own form auto-fills title/author/language there too, so it's still useful even without a title match.
 
 Google Books was tried first and dropped: its anonymous tier's daily quota was easily exhausted, and even with a personal API key its `isbn:`-query backend had its own outage (`503` on any numeric query, even a well-known English ISBN - unrelated to anything on our end). Too unreliable to depend on compared to barcode+Almedina.
 
-## Known limitation: the vision+filter fallback is best-effort, not authoritative
+## Known limitation: some books need manual entry
 
-Small local models aren't perfectly reliable — across real testing, title/author extraction from a photographed cover occasionally missed or misread the actual title (especially when the cover transcription step didn't clearly capture it in the first place), and once even returned the literal string `"null"` instead of an actual null value (now normalized). This only matters when the ISBN-first path above doesn't resolve a book. It's exactly why the review step (#7) shows editable fields rather than auto-submitting anything — you're always meant to glance at the extracted data before pasting it, not trust it blindly.
+Almedina doesn't carry every book, and not every barcode photo decodes cleanly (glare, blur, a bent spine). Either case leaves a book at `status = failed` instead of a guessed title/author. This is expected, not a bug — the review step (#7) will surface these separately so you can type in the missing fields by hand instead of trusting an unreliable guess.
 
 ## Setup
 
 1. `pip install -r requirements.txt`
-2. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` and the `OLLAMA_*` settings if needed.
-3. Have [Ollama](https://ollama.com) running locally with `gemma3:4b` and `phi4-mini` pulled — already validated on real book covers.
-4. `blt initdb`
+2. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` if needed.
+3. `blt initdb`
 
 ## CLI commands
 

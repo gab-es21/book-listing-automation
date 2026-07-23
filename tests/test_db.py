@@ -1,21 +1,9 @@
 from pathlib import Path
 
-import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
 from blt import db
-from blt.models import Base, Book
-
-
-@pytest.fixture
-def temp_db(tmp_path, monkeypatch):
-    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", future=True)
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
-    monkeypatch.setattr(db, "engine", engine)
-    monkeypatch.setattr(db, "SessionLocal", session_factory)
-    return session_factory
+from blt.models import Book
 
 
 def _make_book_folders(base: Path, names):

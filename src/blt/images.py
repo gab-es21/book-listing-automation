@@ -1,4 +1,3 @@
-from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
@@ -10,8 +9,6 @@ try:
 except Exception:
     open_heif = None  # type: ignore
     _HAVE_HEIF = False
-
-from .config import settings
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
@@ -36,21 +33,3 @@ def load_image_any(p: Path) -> Image.Image:
             except AttributeError:
                 return Image.frombytes(hf.mode, hf.size, hf.data, "raw", hf.mode, hf.stride)
         raise
-
-
-def resize_to_jpeg_bytes(p) -> bytes:
-    """Resize to max side settings.VISION_MAX_SIDE and export as JPEG (RGB, no heavy metadata)."""
-    img = Image.open(p).convert("RGB")
-    w, h = img.size
-    max_side = settings.VISION_MAX_SIDE
-    if max(w, h) > max_side:
-        if w >= h:
-            nh = int(h * (max_side / w))
-            img = img.resize((max_side, nh))
-        else:
-            nw = int(w * (max_side / h))
-            img = img.resize((nw, max_side))
-
-    out = BytesIO()
-    img.save(out, "JPEG", quality=settings.VISION_JPEG_QUALITY, optimize=True)
-    return out.getvalue()

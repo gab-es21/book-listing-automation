@@ -1,42 +1,36 @@
 """
-Combines every extraction technique into one priority-ordered pipeline:
+Barcode + Almedina lookup only - no vision/LLM fallback.
 
-1. Decode the ISBN barcode (deterministic, no LLM).
-2. Look it up on Almedina (a Portuguese bookstore's own site search - good
-   coverage for small local-press/book-club editions).
-3. Only if the barcode is missing/unreadable, or the lookup doesn't find it,
-   fall back to the local vision model reading the cover + the text-filter
-   step. Even then, a barcode-decoded ISBN (if we have one) is kept over
-   whatever the vision model guessed for it.
-
-Google Books was tried and dropped: its anonymous tier's daily quota was
-easily exhausted, and even with a personal API key its isbn: query backend
-had its own outage (503 on any numeric query, unrelated to anything on our
-end) - too unreliable to depend on compared to barcode+Almedina, which
-worked cleanly once set up correctly.
+A photographed cover isn't a reliable enough source of truth for title and
+author (small local models misread fine print often enough to matter), and
+there is no acceptable alternative to a real, checksum-verified ISBN: once
+`pyzbar` can't decode the barcode, or the decoded ISBN doesn't resolve to a
+known title on Almedina, this gives up rather than guess - the book is left
+unresolved for the human to fill in by hand.
 """
 from pathlib import Path
 
 from .almedina_lookup import AlmedinaLookupError, lookup_by_isbn
 from .barcode import decode_isbn_barcode
-from .filter import filter_book_fields
-from .vision import extract_book_text
 
 
 def extract_book_fields(folder: Path) -> dict:
+    """
+    Returns {"title", "author", "isbn"}. `title` is None when the book could
+    not be resolved (no barcode, or Almedina doesn't have it) - the caller
+    marks that book status="failed" for manual entry. The barcode-decoded
+    ISBN is kept even when unresolved, since it's still valid on its own.
+    """
     folder = Path(folder)
     isbn = decode_isbn_barcode(folder / "isbn.jpg")
+    if not isbn:
+        return {"title": None, "author": None, "isbn": None}
 
-    if isbn:
-        try:
-            looked_up = lookup_by_isbn(isbn)
-        except AlmedinaLookupError:
-            looked_up = None
-        if looked_up and looked_up.get("title"):
-            return {"title": looked_up["title"], "author": looked_up.get("author"), "isbn": isbn}
+    try:
+        looked_up = lookup_by_isbn(isbn)
+    except AlmedinaLookupError:
+        looked_up = None
 
-    texts = extract_book_text(folder)
-    fields = filter_book_fields(texts["cover_text"], texts["isbn_text"])
-    if isbn:
-        fields["isbn"] = isbn  # barcode decode beats the vision model's own ISBN guess
-    return fields
+    if looked_up and looked_up.get("title"):
+        return {"title": looked_up["title"], "author": looked_up.get("author"), "isbn": isbn}
+    return {"title": None, "author": None, "isbn": isbn}
