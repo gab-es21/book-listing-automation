@@ -26,8 +26,8 @@ flowchart TD
     J --> K["You: copy fields,\ncreate the listing on\nVinted by hand"]
     K --> L["Click Next →\nDB: status = available"]
 
-    class A,B,C,D,E done
-    class F,G,H,I building
+    class A,B,C,D,E,F done
+    class G,H,I building
     class J,K,L todo
 
     classDef done fill:#2f9e44,color:#fff,stroke:#2f9e44
@@ -43,7 +43,7 @@ flowchart TD
 |---|---|---|
 | [#1](https://github.com/gab-es21/book-listing-automation/issues/1) | Photo intake: sort & pair into cover/back folders | 🟢 done |
 | [#2](https://github.com/gab-es21/book-listing-automation/issues/2) | SQLite schema & book status state machine | 🟢 done |
-| [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | ⚪ not started |
+| [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | 🟢 done |
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | ⚪ not started |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | ⚪ not started |
 | [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | ⚪ not started |
