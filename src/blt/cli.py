@@ -17,9 +17,14 @@ def group():
 
 @app.command("group-all")
 def group_all_cmd(max_groups: int = typer.Option(None, help="Limite de grupos a criar (por omissão, todos)")):
-    """Agrupa TUDO o que houver em photos_raw/ em blocos de PHOTOS_PER_BOOK."""
+    """Agrupa TUDO o que houver em photos_raw/ e regista cada livro na DB como pending."""
+    from .config import settings
+    from .db import sync_pending_books
     from .group_photos import group_all as _group_all
     _group_all(max_groups=max_groups)
+    added = sync_pending_books(settings.GROUPED_DIR)
+    if added:
+        print(f"[green]{added} livro(s) registados na DB como pending.[/green]")
 
 @app.command("convert-heic")
 def convert_heic(path: str, recursive: bool = True, delete_src: bool = True):

@@ -42,7 +42,7 @@ flowchart TD
 | # | Issue | Status |
 |---|---|---|
 | [#1](https://github.com/gab-es21/book-listing-automation/issues/1) | Photo intake: sort & pair into cover/back folders | 🟢 done |
-| [#2](https://github.com/gab-es21/book-listing-automation/issues/2) | SQLite schema & book status state machine | ⚪ not started |
+| [#2](https://github.com/gab-es21/book-listing-automation/issues/2) | SQLite schema & book status state machine | 🟢 done |
 | [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | ⚪ not started |
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | ⚪ not started |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | ⚪ not started |
