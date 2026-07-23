@@ -32,8 +32,7 @@ flowchart TD
     K --> L["You: copy fields,\ncreate the listing on\nVinted by hand"]
     L --> M["Click Next →\nDB: status = available"]
 
-    class A,B,C,D,E,F,G,H1,F2,G2 done
-    class I building
+    class A,B,C,D,E,F,G,H1,F2,G2,I done
     class J building
     class K,L,M todo
 
@@ -52,7 +51,7 @@ flowchart TD
 | [#2](https://github.com/gab-es21/book-listing-automation/issues/2) | SQLite schema & book status state machine | 🟢 done |
 | [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | 🟢 done |
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
-| [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | ⚪ not started |
+| [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | 🟢 done |
 | [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | ⚪ not started |
 | [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | ⚪ not started |
 | [#8](https://github.com/gab-es21/book-listing-automation/issues/8) | Cleanup old Vinted-automation/Supabase code | 🟢 done |
@@ -60,6 +59,8 @@ flowchart TD
 ## Fixed by design (not extracted, not automated)
 
 Category, condition, and language are always the same for every listing, so the tool never tries to detect or set them — pick them by hand in Vinted's UI each time. Pasting a valid ISBN into Vinted's own form auto-fills title/author/language there too, which is why getting the ISBN right is so valuable.
+
+Price is a flat `BOOK_PRICE_EUR` (default €7) for every book - not computed, not negotiated in the description text. Negotiation happens through Vinted's own offer feature; the description never mentions a price floor. Transport isn't mentioned either - Vinted handles shipping natively, so there's nothing to describe about delivery/shipping arrangements.
 
 ## ISBN-first extraction strategy
 
@@ -76,7 +77,7 @@ Small local models aren't perfectly reliable — across real testing, title/auth
 ## Setup
 
 1. `pip install -r requirements.txt`
-2. Copy `.env.example` to `.env` and adjust `SELLER_LOCATION`/`SELLER_SHIPPING` and the `OLLAMA_*` settings if needed.
+2. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` and the `OLLAMA_*` settings if needed.
 3. Have [Ollama](https://ollama.com) running locally with `gemma3:4b` and `phi4-mini` pulled — already validated on real book covers.
 4. `blt initdb`
 
