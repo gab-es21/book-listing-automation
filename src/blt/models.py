@@ -4,7 +4,9 @@ from sqlalchemy import String, DateTime, Float, Integer, Text, func
 class Base(DeclarativeBase): pass
 
 # status: pending (grouped, not yet reviewed/listed) -> available (listed on
-# Vinted) -> sold_out. Category/condition/language aren't tracked here - they
+# Vinted) -> sold_out, with a side branch to failed (extraction couldn't
+# resolve a title via barcode+Almedina - needs manual entry before it can
+# become available). Category/condition/language aren't tracked here - they
 # never vary and are picked by hand in Vinted's own UI.
 class Book(Base):
     __tablename__ = "books"

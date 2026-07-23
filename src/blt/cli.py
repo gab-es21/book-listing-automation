@@ -26,6 +26,13 @@ def group_all_cmd(max_groups: int = typer.Option(None, help="Limite de grupos a 
     if added:
         print(f"[green]{added} livro(s) registados na DB como pending.[/green]")
 
+@app.command()
+def extract(limit: int = typer.Option(None, help="Limite de livros a processar (por omissão, todos)")):
+    """Corre a extração (barcode + Almedina) sobre os livros pending sem título ainda."""
+    from .extract import extract_pending_books
+    result = extract_pending_books(limit=limit)
+    print(f"[green]{result['resolved']} resolvido(s), {result['failed']} marcado(s) como failed.[/green]")
+
 @app.command("convert-heic")
 def convert_heic(path: str, recursive: bool = True, delete_src: bool = True):
     """Convert all .heic/.heif under PATH to .jpg (deletes originals by default)."""

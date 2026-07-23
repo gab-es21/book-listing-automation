@@ -52,7 +52,7 @@ flowchart TD
 | [#3](https://github.com/gab-es21/book-listing-automation/issues/3) | Local vision extraction via Ollama | 🟢 done |
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | 🟢 done |
-| [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | ⚪ not started |
+| [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | 🟡 in progress |
 | [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | ⚪ not started |
 | [#8](https://github.com/gab-es21/book-listing-automation/issues/8) | Cleanup old Vinted-automation/Supabase code | 🟢 done |
 
@@ -89,7 +89,7 @@ Almedina doesn't carry every book, and not every barcode photo decodes cleanly (
 | `blt initdb` | create the local SQLite schema |
 | `blt group-all` | sort+pair everything in `photos_raw/` into `photos_grouped/book_NNN/` |
 | `blt convert-heic PATH` | convert HEIC/HEIF photos to JPEG in place |
-| `blt extract` | *(planned, #6)* run local vision extraction on pending books |
+| `blt extract [--limit N]` | run barcode+Almedina extraction on pending books missing data; unresolved ones are marked `failed` |
 | `blt review` | *(planned, #7)* open the local copy-paste review page |
 
 ## Testing
