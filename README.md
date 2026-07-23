@@ -18,7 +18,7 @@ flowchart TD
     D --> E["DB: insert Book row\nstatus = pending"]
 
     E --> F["Decode ISBN barcode\n(pyzbar - deterministic, no LLM)"]
-    F -->|"barcode found"| G["Look up ISBN:\nGoogle Books, then Almedina"]
+    F -->|"barcode found"| G["Look up ISBN on Almedina\n(PT bookstore site search)"]
     G -->|"found"| H1["title/author = lookup result\n(skips vision entirely)"]
     G -->|"not found"| F2
     F -->|"no barcode"| F2["Ollama (gemma3:4b) reads\ncover + ISBN close-up"]
@@ -65,7 +65,9 @@ Category, condition, and language are always the same for every listing, so the 
 
 Live testing showed the local vision model reading fine print (barcodes, small ISBN text) unreliably enough to matter, so ISBN doesn't rely on OCR at all: `pyzbar` decodes the actual EAN-13 barcode from the ISBN close-up photo - a solved, deterministic computer-vision problem, not a guess. A successful decode already implies a valid checksum (the EAN-13 standard requires it).
 
-Once we have a real ISBN, we look it up rather than trust whatever's readable on the cover: **Google Books** first (broad coverage, but its `isbn:`-query backend has had outages - as of writing, even a well-known English ISBN gets a `503` there, unrelated to anything on our end), then **Almedina** (a Portuguese bookstore's own site search - much better coverage for small local-press/book-club editions Google Books misses; personal low-volume use only, honest self-identifying User-Agent, not for bulk scraping). Only when the barcode is missing/unreadable, or neither lookup finds the ISBN, does it fall back to the local vision model reading the cover + a text-filter step - which is where remaining unreliability lives (see below).
+Once we have a real ISBN, we look it up rather than trust whatever's readable on the cover: **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal low-volume use only, honest self-identifying User-Agent, not for bulk scraping). Only when the barcode is missing/unreadable, or the lookup doesn't find the ISBN, does it fall back to the local vision model reading the cover + a text-filter step - which is where remaining unreliability lives (see below).
+
+Google Books was tried first and dropped: its anonymous tier's daily quota was easily exhausted, and even with a personal API key its `isbn:`-query backend had its own outage (`503` on any numeric query, even a well-known English ISBN - unrelated to anything on our end). Too unreliable to depend on compared to barcode+Almedina.
 
 ## Known limitation: the vision+filter fallback is best-effort, not authoritative
 
@@ -76,8 +78,7 @@ Small local models aren't perfectly reliable — across real testing, title/auth
 1. `pip install -r requirements.txt`
 2. Copy `.env.example` to `.env` and adjust `SELLER_LOCATION`/`SELLER_SHIPPING` and the `OLLAMA_*` settings if needed.
 3. Have [Ollama](https://ollama.com) running locally with `gemma3:4b` and `phi4-mini` pulled — already validated on real book covers.
-4. (Optional but recommended) Get a free `GOOGLE_BOOKS_API_KEY` - console.cloud.google.com → enable "Books API" → Credentials → Create API key. Without it, Google Books lookups use the shared anonymous tier, which has a very small daily quota.
-5. `blt initdb`
+4. `blt initdb`
 
 ## CLI commands
 

@@ -21,11 +21,6 @@ class Settings(BaseSettings):
     PRICE_MIN: float = 5.0
     PRICE_MARGIN_EUR: float = 2.0
 
-    # Opcional - sem isto usa-se o tier anónimo (quota diária partilhada,
-    # facilmente esgotada). Com uma key própria (console.cloud.google.com,
-    # ativar "Books API", criar credencial) tens quota separada.
-    GOOGLE_BOOKS_API_KEY: str | None = None
-
     # Redimensionamento de imagens antes de enviar ao modelo de visão local
     VISION_MAX_SIDE: int = 1280
     VISION_JPEG_QUALITY: int = 85
