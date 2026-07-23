@@ -11,3 +11,7 @@ requires-python = ">=3.10"
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = ["blt"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

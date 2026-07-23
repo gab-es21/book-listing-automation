@@ -1,5 +1,7 @@
 # Book Listing Automation (blt)
 
+![Tests](https://github.com/gab-es21/book-listing-automation/actions/workflows/tests.yml/badge.svg)
+
 CLI + local web tool that helps list used books for sale on Vinted: take phone photos, read title/author/ISBN off the covers with a **local, offline vision model**, and get a simple review page to copy the info into Vinted and track what's been listed. Nothing touches Vinted programmatically — you create the actual listing by hand.
 
 ## Why not automate the Vinted posting itself?
@@ -68,3 +70,12 @@ Category, condition, and language are always the same for every listing, so the 
 | `blt convert-heic PATH` | convert HEIC/HEIF photos to JPEG in place |
 | `blt extract` | *(planned, #6)* run local vision extraction on pending books |
 | `blt review` | *(planned, #7)* open the local copy-paste review page |
+
+## Testing
+
+`pytest` (unit tests use synthetic images + `tmp_path`, no real photos or Ollama needed). Runs automatically on every push/PR via GitHub Actions.
+
+```bash
+pip install -r requirements.txt
+pytest -v
+```
