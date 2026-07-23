@@ -13,11 +13,11 @@ We tried (see the `feat/vinted-http-api` branch for the full trail). Vinted has 
 ```mermaid
 flowchart TD
     A["📁 photos_raw/\n(dump all photos, mixed order)"] -->|"blt group-all"| B["Sort chronologically\n(EXIF DateTimeOriginal, else file mtime)"]
-    B --> C["Pair consecutively\n1st = cover, 2nd = back"]
-    C --> D["📁 photos_grouped/book_NNN/\ncover.jpg + back.jpg"]
+    B --> C["Pair consecutively\n1st = cover, 2nd = ISBN close-up"]
+    C --> D["📁 photos_grouped/book_NNN/\ncover.jpg + isbn.jpg"]
     D --> E["DB: insert Book row\nstatus = pending"]
 
-    E --> F["blt extract\nOllama (gemma3:4b) reads\ncover + back photos"]
+    E --> F["blt extract\nOllama (gemma3:4b) reads\ncover + ISBN close-up"]
     F --> G["Filter raw text →\ntitle / author / isbn"]
     G --> H["Compose PT description\n+ suggested price"]
     H --> I["DB: save fields\n(still status = pending)"]

@@ -1,10 +1,11 @@
 """
 Local, offline vision extraction via Ollama - no OpenAI, no cloud dependency.
 
-Reads raw text off a book's cover/back photos. Deliberately does NOT try to
-return clean structured fields here - that filtering step is separate
-(keeps this module simple, and smaller local models tend to wrap JSON in
-prose more than a hosted model would).
+Reads raw text off a book's cover photo and a close-up ISBN photo (not a
+full back-cover shot - a tight close-up on the barcode/number reads far more
+reliably). Deliberately does NOT try to return clean structured fields here -
+that filtering step is separate (keeps this module simple, and smaller local
+models tend to wrap JSON in prose more than a hosted model would).
 """
 import base64
 from pathlib import Path
@@ -19,10 +20,12 @@ _COVER_PROMPT = (
     "as plainly as possible: title, author, publisher, any other visible text. "
     "Just the text, no commentary."
 )
-_BACK_PROMPT = (
-    "This is the back cover of a book. Transcribe all the text you can see on it. "
-    "Pay close attention to any ISBN number (often printed near a barcode, "
-    "usually starting with 978 or 979). Just the text, no commentary."
+_ISBN_PROMPT = (
+    "This is a close-up photo of a book's ISBN number/barcode area. Transcribe the "
+    "ISBN as precisely as possible - it's usually 13 digits, often starting with "
+    "978 or 979. If there is other small print visible, include it too, but the "
+    "ISBN is what matters most. If you can't read it clearly, say so rather than "
+    "guessing. Just the text, no commentary."
 )
 
 
@@ -63,14 +66,14 @@ def read_cover(path: Path) -> str:
     return _generate(_COVER_PROMPT, path)
 
 
-def read_back(path: Path) -> str:
-    return _generate(_BACK_PROMPT, path)
+def read_isbn(path: Path) -> str:
+    return _generate(_ISBN_PROMPT, path)
 
 
 def extract_book_text(folder: Path) -> dict:
-    """Reads cover.jpg and back.jpg in a book_NNN folder, returns raw text for each."""
+    """Reads cover.jpg and isbn.jpg in a book_NNN folder, returns raw text for each."""
     folder = Path(folder)
     return {
         "cover_text": read_cover(folder / "cover.jpg"),
-        "back_text": read_back(folder / "back.jpg"),
+        "isbn_text": read_isbn(folder / "isbn.jpg"),
     }

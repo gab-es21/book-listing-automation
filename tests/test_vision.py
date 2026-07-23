@@ -49,7 +49,7 @@ def test_read_cover_sends_expected_request_and_returns_text(monkeypatch, sample_
     base64.b64decode(captured["json"]["images"][0])  # raises if not valid base64
 
 
-def test_read_back_uses_a_different_isbn_focused_prompt(monkeypatch, sample_image):
+def test_read_isbn_uses_a_different_isbn_focused_prompt(monkeypatch, sample_image):
     captured = {}
 
     def fake_post(url, json, timeout):
@@ -58,7 +58,7 @@ def test_read_back_uses_a_different_isbn_focused_prompt(monkeypatch, sample_imag
 
     monkeypatch.setattr(requests, "post", fake_post)
 
-    text = vision.read_back(sample_image)
+    text = vision.read_isbn(sample_image)
 
     assert text == "9789896689704"
     assert "ISBN" in captured["prompt"]
@@ -92,7 +92,7 @@ def test_extract_book_text_reads_both_photos(monkeypatch, tmp_path):
     folder = tmp_path / "book_001"
     folder.mkdir()
     Image.new("RGB", (4, 4)).save(folder / "cover.jpg", "JPEG")
-    Image.new("RGB", (4, 4)).save(folder / "back.jpg", "JPEG")
+    Image.new("RGB", (4, 4)).save(folder / "isbn.jpg", "JPEG")
 
     seen_prompts = []
 
@@ -104,4 +104,4 @@ def test_extract_book_text_reads_both_photos(monkeypatch, tmp_path):
 
     result = vision.extract_book_text(folder)
 
-    assert result == {"cover_text": "text-for-1", "back_text": "text-for-2"}
+    assert result == {"cover_text": "text-for-1", "isbn_text": "text-for-2"}

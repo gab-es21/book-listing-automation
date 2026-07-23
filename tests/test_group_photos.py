@@ -40,22 +40,22 @@ def _assert_color(actual, expected, tol=15):
 def test_pairs_by_capture_time_regardless_of_filename(raw_and_grouped):
     raw, grouped = raw_and_grouped
     base = time.time()
-    COVER1, BACK1, COVER2, BACK2 = (10, 0, 0), (20, 0, 0), (30, 0, 0), (40, 0, 0)
+    COVER1, ISBN1, COVER2, ISBN2 = (10, 0, 0), (20, 0, 0), (30, 0, 0), (40, 0, 0)
 
     # filenames deliberately scrambled / not in chronological order
     _make_photo(raw, "zzz_book1_cover.jpg", base + 0, COVER1)
-    _make_photo(raw, "aaa_book1_back.jpg", base + 10, BACK1)
+    _make_photo(raw, "aaa_book1_isbn.jpg", base + 10, ISBN1)
     _make_photo(raw, "mmm_book2_cover.jpg", base + 20, COVER2)
-    _make_photo(raw, "bbb_book2_back.jpg", base + 30, BACK2)
+    _make_photo(raw, "bbb_book2_isbn.jpg", base + 30, ISBN2)
 
     created = gp.group_all()
 
     assert [c.name for c in created] == ["book_001", "book_002"]
-    assert {p.name for p in created[0].iterdir()} == {"cover.jpg", "back.jpg"}
+    assert {p.name for p in created[0].iterdir()} == {"cover.jpg", "isbn.jpg"}
     _assert_color(_pixel(created[0] / "cover.jpg"), COVER1)
-    _assert_color(_pixel(created[0] / "back.jpg"), BACK1)
+    _assert_color(_pixel(created[0] / "isbn.jpg"), ISBN1)
     _assert_color(_pixel(created[1] / "cover.jpg"), COVER2)
-    _assert_color(_pixel(created[1] / "back.jpg"), BACK2)
+    _assert_color(_pixel(created[1] / "isbn.jpg"), ISBN2)
 
 
 def test_exif_datetime_wins_over_mtime(raw_and_grouped):
@@ -81,7 +81,7 @@ def test_exif_datetime_wins_over_mtime(raw_and_grouped):
     created = gp.group_all()
 
     _assert_color(_pixel(created[0] / "cover.jpg"), (2, 0, 0))  # earlier EXIF -> cover
-    _assert_color(_pixel(created[0] / "back.jpg"), (1, 0, 0))
+    _assert_color(_pixel(created[0] / "isbn.jpg"), (1, 0, 0))
 
 
 def test_odd_leftover_is_kept_not_dropped_or_guessed(raw_and_grouped):

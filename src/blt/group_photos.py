@@ -72,18 +72,19 @@ def group_last_set():
     last_n = imgs[-need:]
     dest = _make_dest(grouped, _next_book_index(grouped))
     _move_as_jpeg(last_n[0], dest / "cover.jpg")
-    _move_as_jpeg(last_n[1], dest / "back.jpg")
+    _move_as_jpeg(last_n[1], dest / "isbn.jpg")
     rprint(f"[green]Grupo criado:[/green] {dest}")
     return dest
 
 
 def group_all(max_groups: int | None = None):
     """
-    Agrupa TUDO o que houver em RAW_DIR em pares (capa, contracapa) por ordem
-    cronológica (EXIF DateTimeOriginal, senão mtime do ficheiro).
+    Agrupa TUDO o que houver em RAW_DIR em pares (capa, close-up do ISBN) por
+    ordem cronológica (EXIF DateTimeOriginal, senão mtime do ficheiro).
 
-    A primeira foto de cada par é sempre a capa, a segunda a contracapa. Uma
-    foto sem par (contagem ímpar) fica em RAW_DIR com um aviso - nunca é
+    A primeira foto de cada par é sempre a capa, a segunda um close-up do
+    ISBN/código de barras (não a contracapa inteira - lê muito melhor assim).
+    Uma foto sem par (contagem ímpar) fica em RAW_DIR com um aviso - nunca é
     emparelhada a adivinhar.
 
     max_groups: limite de quantos livros criar (None = todos os possíveis).
@@ -110,12 +111,12 @@ def group_all(max_groups: int | None = None):
     created = []
 
     for g in range(pairs_count):
-        cover_src, back_src = imgs[g * need], imgs[g * need + 1]
+        cover_src, isbn_src = imgs[g * need], imgs[g * need + 1]
         dest = _make_dest(grouped, start_idx + g)
         _move_as_jpeg(cover_src, dest / "cover.jpg")
-        _move_as_jpeg(back_src, dest / "back.jpg")
+        _move_as_jpeg(isbn_src, dest / "isbn.jpg")
         created.append(dest)
-        rprint(f"[green]{dest.name}[/green]: capa={cover_src.name}, contracapa={back_src.name}")
+        rprint(f"[green]{dest.name}[/green]: capa={cover_src.name}, isbn={isbn_src.name}")
 
     leftover = imgs[pairs_count * need:]
     if leftover:
