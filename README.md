@@ -53,7 +53,7 @@ flowchart TD
 | [#4](https://github.com/gab-es21/book-listing-automation/issues/4) | Structured field filter (title/author/isbn) | 🟢 done |
 | [#5](https://github.com/gab-es21/book-listing-automation/issues/5) | Description & price composition | 🟢 done |
 | [#6](https://github.com/gab-es21/book-listing-automation/issues/6) | `blt extract` CLI command | 🟢 done |
-| [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | 🟡 in progress |
+| [#7](https://github.com/gab-es21/book-listing-automation/issues/7) | Local review frontend (FastAPI) | 🟢 done |
 | [#8](https://github.com/gab-es21/book-listing-automation/issues/8) | Cleanup old Vinted-automation/Supabase code | 🟢 done |
 
 ## Fixed by design (not extracted, not automated)
