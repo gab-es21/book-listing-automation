@@ -100,6 +100,15 @@ def test_sidebar_title_links_back_to_dashboard(temp_db):
     assert '<a class="sidebar-title" href="/">BookListing</a>' in r.text
 
 
+def test_favicon_is_served_from_static(temp_db):
+    r = client.get("/")
+    assert '<link rel="icon" type="image/png" href="/static/icon.png">' in r.text
+
+    icon = client.get("/static/icon.png")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"] == "image/png"
+
+
 def test_sidebar_badges_reflect_current_counts(monkeypatch, tmp_path, temp_db):
     raw = tmp_path / "raw"
     raw.mkdir()
