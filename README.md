@@ -100,8 +100,10 @@ Default is `false` - leave it that way for real usage.
 ## Setup
 
 1. `pip install -r requirements.txt`
-2. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` if needed.
-3. `blt initdb`
+2. `pip install -e .` - installs the `blt` package itself and registers the `blt` command (this is what makes the bare `blt ...` commands below actually work; without it there's no `blt` executable, only `python -m blt.cli ...`).
+3. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` if needed.
+4. `blt initdb` - creates `blt.db` (SQLite, a plain file in the project root) with the `books` and `sales` tables. All data - every book, photo path, and sale - lives in that one file plus the `photos_raw/`/`photos_grouped/` folders, so it persists across restarts and across machine reboots; nothing here is in-memory or session-scoped.
+5. `blt review` to start the local web app (see below) - `Ctrl+C` in that terminal stops it. Safe to stop and restart anytime; it always resumes from whatever's in `blt.db`.
 
 ## CLI commands
 
