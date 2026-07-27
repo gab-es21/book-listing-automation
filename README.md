@@ -1,6 +1,8 @@
 # Book Listing Automation (blt)
 
-![Tests](https://github.com/gab-es21/book-listing-automation/actions/workflows/tests.yml/badge.svg)
+<img src="src/blt/static/icon.png" alt="blt - Book Listing Automation" width="500">
+
+![CI](https://github.com/gab-es21/book-listing-automation/actions/workflows/ci.yml/badge.svg)
 
 CLI + local web tool that helps list used books for sale on Vinted: take phone photos, decode the ISBN barcode and **look up title/author deterministically** (barcode + bookstore site search, no guessing), and get a simple review page to copy the info into Vinted and track what's been listed. Nothing touches Vinted programmatically — you create the actual listing by hand.
 
@@ -133,3 +135,7 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage the Python version,
 uv sync
 uv run pytest -v
 ```
+
+## Contributing / branching
+
+`main` and `alpha` are permanent branches - nothing is committed to either directly. All work happens on a `feature/*` or `fix/*` branch cut from `alpha`, merged back via PR once CI (lint, types, tests with coverage) passes. `alpha` periodically gets merged into `main` as a tagged release. See [CLAUDE.md](CLAUDE.md) for the exact commands and rules an agent session should follow.
