@@ -1,5 +1,7 @@
 # Book Listing Automation (blt)
 
+<img src="src/blt/static/icon.png" alt="blt - Book Listing Automation" width="500">
+
 ![CI](https://github.com/gab-es21/book-listing-automation/actions/workflows/ci.yml/badge.svg)
 
 CLI + local web tool that helps list used books for sale on Vinted: take phone photos, decode the ISBN barcode and **look up title/author deterministically** (barcode + bookstore site search, no guessing), and get a simple review page to copy the info into Vinted and track what's been listed. Nothing touches Vinted programmatically — you create the actual listing by hand.
