@@ -1,5 +1,6 @@
 import typer
 from pathlib import Path
+from typing import Optional
 from rich import print
 from .db import init_db
 from .group_photos import group_last_set
@@ -19,8 +20,12 @@ def group():
 def group_all_cmd(max_groups: int = typer.Option(None, help="Limite de grupos a criar (por omissão, todos)")):
     """Agrupa TUDO o que houver em photos_raw/ e regista cada livro na DB como pending."""
     from .config import settings
-    from .db import sync_pending_books
+    from .db import reset_dev_pending_books, sync_pending_books
     from .group_photos import group_all as _group_all
+    if settings.DEV_MODE:
+        removed = reset_dev_pending_books()
+        if removed:
+            print(f"[yellow]DEV_MODE: {removed} livro(s) pending/failed reiniciados.[/yellow]")
     _group_all(max_groups=max_groups)
     added = sync_pending_books(settings.GROUPED_DIR)
     if added:
@@ -42,9 +47,12 @@ def review(host: str = "127.0.0.1", port: int = 8000):
     uvicorn.run(review_app, host=host, port=port)
 
 @app.command("convert-heic")
-def convert_heic(path: str, recursive: bool = True, delete_src: bool = True):
-    """Convert all .heic/.heif under PATH to .jpg (deletes originals by default)."""
+def convert_heic(path: str, recursive: bool = True, delete_src: Optional[bool] = None):
+    """Convert all .heic/.heif under PATH to .jpg (deletes originals unless DEV_MODE is on)."""
+    from .config import settings
     from .heic_convert import convert_folder
+    if delete_src is None:
+        delete_src = not settings.DEV_MODE
     created = convert_folder(Path(path), recursive=recursive, delete_src=delete_src)
     print(f"[green]{len(created)} ficheiro(s) convertidos para JPEG.[/green]")
 

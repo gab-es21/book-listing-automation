@@ -127,6 +127,20 @@ def test_numbering_continues_from_existing_book_folders(raw_and_grouped):
     assert [c.name for c in created] == ["book_006"]
 
 
+def test_dev_mode_copies_instead_of_moving_raw_photos(raw_and_grouped, monkeypatch):
+    raw, grouped = raw_and_grouped
+    monkeypatch.setattr(config.settings, "DEV_MODE", True)
+    base = time.time()
+    _make_photo(raw, "cover.jpg", base, (1, 0, 0))
+    _make_photo(raw, "isbn.jpg", base + 1, (2, 0, 0))
+
+    created = gp.group_all()
+
+    assert [c.name for c in created] == ["book_001"]
+    assert {p.name for p in raw.iterdir()} == {"cover.jpg", "isbn.jpg"}  # left in place
+    assert {p.name for p in created[0].iterdir()} == {"cover.jpg", "isbn.jpg"}  # also copied out
+
+
 def test_max_groups_limits_how_many_are_created(raw_and_grouped):
     raw, grouped = raw_and_grouped
     base = time.time()

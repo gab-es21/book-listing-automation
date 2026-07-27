@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from blt import review_app
 from blt.models import Book
 from blt.review_app import app
 
@@ -81,6 +82,57 @@ def test_next_advances_to_the_next_pending_book(temp_db):
     r = client.get("/")
     assert "Second" in r.text
     assert "First" not in r.text
+
+
+def test_dev_mode_next_does_not_promote_saves_edits_and_stays_pending(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    book_id = _add_book(temp_db, folder_path="book_dev", title="Old")
+
+    client.post("/next", data={"book_id": book_id, "title": "Edited", "price": "7.0", "quantity": "1"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.title == "Edited"  # edits are still saved
+        assert book.status == "pending"  # but never promoted
+
+
+def test_dev_mode_next_cycles_to_the_next_book_via_after_cursor(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    first_id = _add_book(temp_db, folder_path="book_a", title="First")
+    _add_book(temp_db, folder_path="book_b", title="Second")
+
+    r = client.post("/next", data={"book_id": first_id, "price": "7.0", "quantity": "1"}, follow_redirects=True)
+
+    assert "Second" in r.text
+    with temp_db() as s:
+        assert s.get(Book, first_id).status == "pending"  # book_a never left the queue
+
+
+def test_dev_mode_wraps_around_after_the_last_book(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    first_id = _add_book(temp_db, folder_path="book_a", title="First")
+    last_id = _add_book(temp_db, folder_path="book_b", title="Second")
+
+    r = client.get("/", params={"after": last_id})
+
+    assert "First" in r.text  # wrapped back to the start, nothing lost
+
+
+def test_dev_mode_shows_a_badge_on_the_review_page(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    _add_book(temp_db, folder_path="book_dev")
+
+    r = client.get("/")
+
+    assert "DEV MODE" in r.text
+
+
+def test_prod_mode_shows_no_dev_badge(temp_db):
+    _add_book(temp_db, folder_path="book_prod")
+
+    r = client.get("/")
+
+    assert "DEV MODE" not in r.text
 
 
 def test_available_list_shows_available_books(temp_db):

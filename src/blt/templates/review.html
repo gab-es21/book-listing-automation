@@ -101,10 +101,22 @@
     font-size: 0.9rem;
     cursor: pointer;
   }
+  .dev-badge {
+    display: inline-block;
+    background: #e8590c;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
 </style>
 </head>
 <body>
 <header class="page-header">
+  {% if dev_mode %}<span class="dev-badge">DEV MODE - Próximo não avança para available</span>{% endif %}
   <nav><a href="/available">Livros disponíveis / vendas &rarr;</a></nav>
   {% if is_previous %}
     <h1>Último livro revisto</h1>

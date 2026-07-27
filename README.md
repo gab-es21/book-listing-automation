@@ -84,6 +84,17 @@ Almedina doesn't carry every book, and not every barcode photo decodes cleanly (
 - `/previous` shows the most-recently-reviewed book as a safety net, with a way to send it back to `pending` if you catch a mistake.
 - `/available` lists every listed book - searchable by título/ISBN/autor, sortable by any column, paginated 20-per-page by default (or "ver tudo" for everything in one scrollable table) - each with its remaining `quantity` and a **Marcar 1 vendido** button. `quantity` isn't a Vinted field (each physical copy still needs its own separate listing there), it's this tool's own stock counter: decrementing it flips the book to `status = sold_out` once it hits zero. Sold-out books stay visible (styled distinctly, sorted to the bottom of the list, no button) rather than disappearing - useful for a quick sales history at a glance.
 
+## Development mode
+
+`DEV_MODE=true` in `.env` makes the whole pipeline safe to run repeatedly against the same fixed set of test photos, instead of consuming them like real usage does:
+
+- **Photo intake** (`blt convert-heic`, `blt group-all`) copies instead of moving/deleting - `photos_raw/` always keeps its originals.
+- **`blt group-all`** resets first: it clears out any existing `pending`/`failed` book folders + DB rows before regrouping fresh from the same raw photos, so you always get the same small batch back instead of piling up `book_004`, `book_005`, ... on every run. It **never touches `available`/`sold_out` rows** - real listing/sale history survives regardless of `DEV_MODE`.
+- **`blt extract`** reuses any title/author it's already resolved for that exact ISBN before (from any earlier real lookup) instead of hitting Almedina again - only a genuinely new ISBN triggers a real (still paced) lookup.
+- **The review page** (`/`) never promotes a book to `available` on **Next** - it saves your edits and cycles to the next pending/failed book by id (wrapping back to the first once you reach the end), so the queue never empties. A "DEV MODE" badge on the page makes this obvious at a glance.
+
+Default is `false` - leave it that way for real usage.
+
 ## Setup
 
 1. `pip install -r requirements.txt`

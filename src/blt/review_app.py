@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, select
 
 from . import db
+from .config import settings
 from .models import Book
 
 app = FastAPI(title="blt review")
@@ -31,18 +32,24 @@ _VISIBLE_STATUSES = ("available", "sold_out")
 
 
 @app.get("/", response_class=HTMLResponse)
-def review_form(request: Request):
+def review_form(request: Request, after: int = 0):
     with db.SessionLocal() as s:
-        book = s.execute(
-            select(Book).where(Book.status.in_(_UNREVIEWED)).order_by(Book.id)
-        ).scalars().first()
+        query = select(Book).where(Book.status.in_(_UNREVIEWED)).order_by(Book.id)
+        book = None
+        if settings.DEV_MODE and after:
+            # cyclic cursor: next pending/failed book after the last one shown,
+            # wrapping back to the first once we reach the end - since DEV_MODE
+            # never promotes anything to available, nothing is ever consumed.
+            book = s.execute(query.where(Book.id > after)).scalars().first()
+        if book is None:
+            book = s.execute(query).scalars().first()
         remaining = s.execute(
             select(func.count()).select_from(Book).where(Book.status.in_(_UNREVIEWED))
         ).scalar_one()
         return templates.TemplateResponse(
             request,
             "review.html",
-            {"book": book, "remaining": remaining, "is_previous": False},
+            {"book": book, "remaining": remaining, "is_previous": False, "dev_mode": settings.DEV_MODE},
         )
 
 
@@ -66,8 +73,11 @@ def submit_next(
         book.description = description or None
         book.price = price
         book.quantity = quantity
-        book.status = "available"
+        if not settings.DEV_MODE:
+            book.status = "available"
         s.commit()
+    if settings.DEV_MODE:
+        return RedirectResponse(f"/?after={book_id}", status_code=303)
     return RedirectResponse("/", status_code=303)
 
 
@@ -84,7 +94,7 @@ def previous_book(request: Request):
         return templates.TemplateResponse(
             request,
             "review.html",
-            {"book": book, "remaining": None, "is_previous": True},
+            {"book": book, "remaining": None, "is_previous": True, "dev_mode": settings.DEV_MODE},
         )
 
 

@@ -1,4 +1,5 @@
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -44,14 +45,22 @@ def _make_dest(base: Path, index: int) -> Path:
     return dest
 
 
-def _move_as_jpeg(src: Path, dest: Path):
-    """Move src into dest, converting to JPEG unless it's already one (cheap rename then)."""
+def _move_as_jpeg(src: Path, dest: Path, copy: bool = False):
+    """
+    Place src into dest as JPEG (converting unless already one). Moves by
+    default; with copy=True (DEV_MODE) src is left untouched in photos_raw/,
+    so the same fixed set of raw photos survives repeated dev-mode runs.
+    """
     if src.suffix.lower() in {".jpg", ".jpeg"}:
-        src.replace(dest)
+        if copy:
+            shutil.copy2(src, dest)
+        else:
+            src.replace(dest)
         return
     img = load_image_any(src).convert("RGB")
     img.save(dest, "JPEG", quality=95, optimize=True)
-    src.unlink()
+    if not copy:
+        src.unlink()
 
 
 def group_last_set():
@@ -71,8 +80,8 @@ def group_last_set():
 
     last_n = imgs[-need:]
     dest = _make_dest(grouped, _next_book_index(grouped))
-    _move_as_jpeg(last_n[0], dest / "cover.jpg")
-    _move_as_jpeg(last_n[1], dest / "isbn.jpg")
+    _move_as_jpeg(last_n[0], dest / "cover.jpg", copy=settings.DEV_MODE)
+    _move_as_jpeg(last_n[1], dest / "isbn.jpg", copy=settings.DEV_MODE)
     rprint(f"[green]Grupo criado:[/green] {dest}")
     return dest
 
@@ -113,8 +122,8 @@ def group_all(max_groups: int | None = None):
     for g in range(pairs_count):
         cover_src, isbn_src = imgs[g * need], imgs[g * need + 1]
         dest = _make_dest(grouped, start_idx + g)
-        _move_as_jpeg(cover_src, dest / "cover.jpg")
-        _move_as_jpeg(isbn_src, dest / "isbn.jpg")
+        _move_as_jpeg(cover_src, dest / "cover.jpg", copy=settings.DEV_MODE)
+        _move_as_jpeg(isbn_src, dest / "isbn.jpg", copy=settings.DEV_MODE)
         created.append(dest)
         rprint(f"[green]{dest.name}[/green]: capa={cover_src.name}, isbn={isbn_src.name}")
 

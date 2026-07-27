@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     # e o transporte é gerido pelo próprio Vinted, não é referido aqui)
     BOOK_PRICE_EUR: float = 7.0
 
+    # Modo de desenvolvimento: fotos raw nunca são apagadas/movidas (são
+    # copiadas), group-all reinicia sempre os livros pending/failed em vez de
+    # acumular, o Next da review não promove a available (avança ciclicamente
+    # sem gastar a fila), e o extract reaproveita ISBNs já resolvidos antes de
+    # voltar a bater na Almedina. Nunca mexe em livros available/sold_out.
+    DEV_MODE: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()

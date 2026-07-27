@@ -8,6 +8,10 @@ def _no_delay(monkeypatch):
     monkeypatch.setattr(extract.time, "sleep", lambda seconds: None)
 
 
+def _boom(*a, **k):
+    raise AssertionError("this should not have been called")
+
+
 def test_resolved_book_gets_filled_in_and_stays_pending(monkeypatch, temp_db):
     _no_delay(monkeypatch)
     with temp_db() as s:
@@ -93,6 +97,44 @@ def test_limit_caps_how_many_books_are_processed(monkeypatch, temp_db):
     result = extract.extract_pending_books(limit=2)
 
     assert result == {"resolved": 2, "failed": 0}
+
+
+def test_dev_mode_reuses_cached_title_without_calling_almedina(monkeypatch, temp_db):
+    _no_delay(monkeypatch)
+    monkeypatch.setattr(extract.settings, "DEV_MODE", True)
+    with temp_db() as s:
+        s.add(Book(folder_path="already_listed", status="available", isbn="9789896689704", title="Sempre Tu", author="Colleen Hoover"))
+        s.add(Book(folder_path="book_new", status="pending"))
+        s.commit()
+
+    monkeypatch.setattr(extract, "decode_isbn_barcode", lambda p: "9789896689704")
+    monkeypatch.setattr(extract, "lookup_by_isbn", _boom)  # must not be called
+
+    result = extract.extract_pending_books()
+
+    assert result == {"resolved": 1, "failed": 0}
+    with temp_db() as s:
+        book = s.execute(select(Book).where(Book.folder_path == "book_new")).scalar_one()
+        assert book.title == "Sempre Tu"
+        assert book.author == "Colleen Hoover"
+
+
+def test_dev_mode_still_looks_up_a_genuinely_new_isbn(monkeypatch, temp_db):
+    _no_delay(monkeypatch)
+    monkeypatch.setattr(extract.settings, "DEV_MODE", True)
+    with temp_db() as s:
+        s.add(Book(folder_path="book_new", status="pending"))
+        s.commit()
+
+    monkeypatch.setattr(extract, "decode_isbn_barcode", lambda p: "9789897100833")
+    monkeypatch.setattr(extract, "lookup_by_isbn", lambda isbn: {"title": "Brand New Book", "author": "Some Author"})
+
+    result = extract.extract_pending_books()
+
+    assert result == {"resolved": 1, "failed": 0}
+    with temp_db() as s:
+        book = s.execute(select(Book).where(Book.folder_path == "book_new")).scalar_one()
+        assert book.title == "Brand New Book"
 
 
 def test_delay_happens_between_books_not_before_first_or_after_last(monkeypatch, temp_db):

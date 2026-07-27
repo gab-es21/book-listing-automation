@@ -54,6 +54,42 @@ def test_sync_missing_dir_returns_zero(tmp_path, temp_db):
     assert added == 0
 
 
+def test_reset_dev_pending_books_removes_pending_and_failed_only(tmp_path, temp_db):
+    pending_folder = tmp_path / "book_001"
+    failed_folder = tmp_path / "book_002"
+    available_folder = tmp_path / "book_003"
+    sold_out_folder = tmp_path / "book_004"
+    for f in (pending_folder, failed_folder, available_folder, sold_out_folder):
+        f.mkdir()
+
+    with temp_db() as s:
+        s.add(Book(folder_path=str(pending_folder), status="pending"))
+        s.add(Book(folder_path=str(failed_folder), status="failed"))
+        s.add(Book(folder_path=str(available_folder), status="available", title="Real Listing"))
+        s.add(Book(folder_path=str(sold_out_folder), status="sold_out", title="Sold Already"))
+        s.commit()
+
+    removed = db.reset_dev_pending_books()
+
+    assert removed == 2
+    assert not pending_folder.exists()
+    assert not failed_folder.exists()
+    assert available_folder.exists()  # real inventory - never touched
+    assert sold_out_folder.exists()
+
+    with temp_db() as s:
+        remaining = s.execute(select(Book)).scalars().all()
+        assert {b.status for b in remaining} == {"available", "sold_out"}
+
+
+def test_reset_dev_pending_books_is_a_noop_when_nothing_to_clear(temp_db):
+    with temp_db() as s:
+        s.add(Book(folder_path="x", status="available", title="Real Listing"))
+        s.commit()
+
+    assert db.reset_dev_pending_books() == 0
+
+
 def test_portuguese_characters_survive_a_real_roundtrip(temp_db):
     """Guards against mojibake: title/description with ç/ã/õ/é must come back byte-identical."""
     title = "Uma Obsessão Indecente"

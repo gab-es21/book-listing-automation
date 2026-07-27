@@ -17,6 +17,7 @@ from sqlalchemy import select
 from . import db
 from .almedina_lookup import AlmedinaLookupError, lookup_by_isbn
 from .barcode import decode_isbn_barcode
+from .config import settings
 from .listing import compose_listing
 from .models import Book
 
@@ -43,6 +44,28 @@ def extract_book_fields(folder: Path) -> dict:
     return {"title": None, "author": None, "isbn": isbn}
 
 
+def _extract_with_dev_cache(s, folder: Path) -> dict:
+    """
+    DEV_MODE only: if we already have a resolved title for this exact ISBN
+    from an earlier real lookup (any book, any status), reuse it instead of
+    hitting Almedina again - repeated dev-mode runs over the same fixed test
+    photos would otherwise burn the rate limit re-resolving the same ISBNs.
+    Genuinely new ISBNs still fall through to a real (paced) lookup.
+    """
+    folder = Path(folder)
+    isbn = decode_isbn_barcode(folder / "isbn.jpg")
+    if not isbn:
+        return {"title": None, "author": None, "isbn": None}
+
+    cached = s.execute(
+        select(Book.title, Book.author).where(Book.isbn == isbn, Book.title.is_not(None)).limit(1)
+    ).first()
+    if cached:
+        return {"title": cached.title, "author": cached.author, "isbn": isbn}
+
+    return extract_book_fields(folder)
+
+
 def extract_pending_books(limit: int | None = None) -> dict:
     """
     Runs extract_book_fields() over every Book row still status="pending"
@@ -65,7 +88,10 @@ def extract_pending_books(limit: int | None = None) -> dict:
             if i > 0:
                 time.sleep(random.uniform(2, 5))
 
-            fields = extract_book_fields(Path(book.folder_path))
+            if settings.DEV_MODE:
+                fields = _extract_with_dev_cache(s, Path(book.folder_path))
+            else:
+                fields = extract_book_fields(Path(book.folder_path))
             if fields["title"]:
                 listing = compose_listing(fields)
                 book.title = listing["title"]
