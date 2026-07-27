@@ -103,7 +103,10 @@ def test_dev_mode_reuses_cached_title_without_calling_almedina(monkeypatch, temp
     _no_delay(monkeypatch)
     monkeypatch.setattr(extract.settings, "DEV_MODE", True)
     with temp_db() as s:
-        s.add(Book(folder_path="already_listed", status="available", isbn="9789896689704", title="Sempre Tu", author="Colleen Hoover"))
+        s.add(Book(
+            folder_path="already_listed", status="available", isbn="9789896689704",
+            title="Sempre Tu", author="Colleen Hoover",
+        ))
         s.add(Book(folder_path="book_new", status="pending"))
         s.commit()
 
