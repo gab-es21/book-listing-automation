@@ -56,6 +56,17 @@
   .progress-legend a:hover { color: #1a1a1a; }
   .progress-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
 
+  .bar-title { margin: 0; font-size: 0.95rem; font-weight: 700; color: #1a1a1a; }
+
+  /* Shared by any other page-specific stacked bar (review queue, stock) -
+     same look as .progress-bar/.progress-legend above, but with plain <div>
+     segments instead of <a> ones, since these don't link to other pages. */
+  .stat-bar { position: relative; display: flex; gap: 2px; height: 20px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .stat-bar div { height: 100%; }
+  .stat-legend { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }
+  .stat-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .stat-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
   .app-layout { display: flex; min-height: 100vh; }
 
   .sidebar {
@@ -164,6 +175,7 @@
   </nav>
   <div class="content">
     <div class="progress-block">
+      <h3 class="bar-title">Progresso</h3>
       <div class="progress-bar">
         <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_units_display }} ({{ raw_pct }}%)"></a>
         <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_count }} ({{ sorted_pct }}%)"></a>

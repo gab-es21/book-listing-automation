@@ -126,6 +126,41 @@ def _review_queue_breakdown(s) -> dict:
     }
 
 
+_STOCK_AUTHOR_TOP_N = 10
+
+
+def _stock_breakdown(s) -> dict:
+    books = s.execute(select(Book).where(Book.status.in_(_VISIBLE_STATUSES))).scalars().all()
+    total = len(books)
+    available = sum(1 for b in books if b.status == "available")
+    sold_out = total - available
+
+    def _pct(x):
+        return round(x / total * 100, 1) if total else 0.0
+
+    author_counts: dict[str, int] = {}
+    for b in books:
+        name = b.author or "Sem autor"
+        author_counts[name] = author_counts.get(name, 0) + 1
+    ranked = sorted(author_counts.items(), key=lambda kv: kv[1], reverse=True)
+    top, rest = ranked[:_STOCK_AUTHOR_TOP_N], ranked[_STOCK_AUTHOR_TOP_N:]
+    authors = [{"name": name, "count": count, "pct": _pct(count)} for name, count in top]
+    others_count = sum(count for _, count in rest)
+    if others_count:
+        authors.append({"name": "Outros", "count": others_count, "pct": _pct(others_count)})
+
+    return {
+        "stock_available_count": available,
+        "stock_sold_out_count": sold_out,
+        "stock_available_pct": _pct(available),
+        "stock_sold_out_pct": _pct(sold_out),
+        "stock_authors": authors,
+        # both views partition the same pool of books, so one tick width
+        # serves both bars.
+        "stock_unit_pct": round(100 / total, 4) if total else 0,
+    }
+
+
 def _reextract_one(s, book: Book) -> None:
     """Re-runs barcode+Almedina extraction for one book, applying the result
     (or lack of one) exactly like extract_pending_books does."""
@@ -482,8 +517,10 @@ def stock_list(
             books = s.execute(ordered.limit(_PER_PAGE).offset((page - 1) * _PER_PAGE)).scalars().all()
 
         ctx = _sidebar_counts(s)
+        breakdown = _stock_breakdown(s)
         return templates.TemplateResponse(request, "available.html", {
             **ctx,
+            **breakdown,
             "active_step": "stock",
             "books": books,
             "q": q,
