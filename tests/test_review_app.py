@@ -209,6 +209,8 @@ def test_review_status_bar_breaks_down_the_queue_by_state(temp_db):
     assert 'title="Não encontrado: 25.0%"' in r.text
     assert 'title="Repetido: 25.0%"' in r.text
     assert 'title="Pronto: 25.0%"' in r.text
+    # 4 books in the queue -> one tick mark every 25% of the bar's width
+    assert '<div class="progress-ticks" style="background-size: 25.0% 100%;"></div>' in r.text
 
 
 def test_review_status_bar_hidden_on_the_previous_page(temp_db):
@@ -418,7 +420,7 @@ def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" in r.text
-    assert '<button type="submit" class="warning">Adicionar &rarr;</button>' in r.text
+    assert '<button type="submit" form="review-form" class="warning">Adicionar <svg' in r.text
 
 
 def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
@@ -427,7 +429,7 @@ def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" not in r.text
-    assert '<button type="submit" class="primary">Criar &rarr;</button>' in r.text
+    assert '<button type="submit" form="review-form" class="primary">Criar <svg' in r.text
 
 
 def test_dev_mode_review_form_never_shows_duplicate_warning(monkeypatch, temp_db):
@@ -620,7 +622,26 @@ def test_review_form_has_a_skip_link_pointing_at_the_current_book(temp_db):
     r = client.get("/review")
 
     assert f'action="/skip/{book_id}"' in r.text
-    assert "Passar por agora" in r.text
+    assert '<button type="submit" class="info">Passar <svg' in r.text
+
+
+def test_review_form_three_action_buttons_share_one_row_with_distinct_colors(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_action_row", title="Row", isbn="12345")
+
+    r = client.get("/review")
+
+    # all three live in the same .review-actions flex row, not split across
+    # separate rows - the primary button is pulled out of #review-form via
+    # the form="" attribute so it can sit alongside the other two. Ordered
+    # Procurar -> Passar -> Criar/Adicionar.
+    actions_start = r.text.index('<div class="review-actions">')
+    actions_end = r.text.index("</div>", actions_start)
+    actions_html = r.text[actions_start:actions_end]
+    procurar_i = actions_html.index('class="retry">Procurar <svg')
+    passar_i = actions_html.index('class="info">Passar <svg')
+    criar_i = actions_html.index('form="review-form" class="primary">Criar <svg')
+    assert procurar_i < passar_i < criar_i
+    assert f'action="/reextract/{book_id}"' in r.text
 
 
 def test_dev_mode_next_does_not_promote_saves_edits_and_stays_pending(monkeypatch, temp_db):

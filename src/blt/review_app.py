@@ -120,6 +120,9 @@ def _review_queue_breakdown(s) -> dict:
         "review_yellow_count": counts["yellow"], "review_green_count": counts["green"],
         "review_red_pct": _pct(counts["red"]), "review_grey_pct": _pct(counts["grey"]),
         "review_yellow_pct": _pct(counts["yellow"]), "review_green_pct": _pct(counts["green"]),
+        # width of one book, as a % of the whole bar - same trick as the main
+        # progress bar's unit_pct, for a tick mark per book.
+        "review_unit_pct": round(100 / total, 4) if total else 0,
     }
 
 
