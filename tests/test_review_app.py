@@ -361,6 +361,43 @@ def test_review_form_sell_title_omits_dash_when_no_author(temp_db):
     assert 'id="sell_title" value="Sempre Tu"' in r.text
 
 
+def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
+    _add_book(
+        temp_db, folder_path="book_stocked", status="available", title="Already Here",
+        isbn="555", quantity=1, price=7.0,
+    )
+    _add_book(temp_db, folder_path="book_pending_dup", status="pending", title="Already Here", isbn="555", price=7.0)
+
+    r = client.get("/review")
+
+    assert "já está em stock" in r.text
+    assert '<button type="submit" class="warning">' in r.text
+
+
+def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
+    _add_book(temp_db, folder_path="book_unique", status="pending", title="Unique Book", isbn="777", price=7.0)
+
+    r = client.get("/review")
+
+    assert "já está em stock" not in r.text
+    assert '<button type="submit" class="primary">' in r.text
+
+
+def test_dev_mode_review_form_never_shows_duplicate_warning(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    _add_book(
+        temp_db, folder_path="book_stocked_dev", status="available", title="Already Here",
+        isbn="444", quantity=1, price=7.0,
+    )
+    _add_book(
+        temp_db, folder_path="book_pending_dup_dev", status="pending", title="Already Here", isbn="444", price=7.0,
+    )
+
+    r = client.get("/review")
+
+    assert "já está em stock" not in r.text  # DEV_MODE never merges, so never warns either
+
+
 def test_sorted_book_does_not_appear_on_review_page(temp_db):
     _add_book(temp_db, folder_path="book_not_extracted", status="pending", title=None)
 
@@ -401,6 +438,71 @@ def test_post_next_saves_fields_and_marks_available(temp_db):
         assert book.author == "New Author"
         assert book.quantity == 2
         assert book.status == "available"
+
+
+def test_post_next_merges_into_existing_book_with_same_isbn(temp_db):
+    existing_id = _add_book(
+        temp_db, folder_path="book_existing", status="available", title="Old Title",
+        isbn="9789896689704", quantity=2, price=7.0,
+    )
+    pending_id = _add_book(
+        temp_db, folder_path="book_pending", status="pending", title="Sempre Tu",
+        isbn="9789896689704", price=7.0,
+    )
+
+    r = client.post(
+        "/next",
+        data={
+            "book_id": pending_id, "title": "Sempre Tu", "author": "Colleen Hoover",
+            "isbn": "9789896689704", "description": "nova descricao", "price": "8.0", "quantity": "3",
+        },
+    )
+
+    assert r.status_code == 200  # followed the redirect to /review
+    with temp_db() as s:
+        existing = s.get(Book, existing_id)
+        assert existing.quantity == 5  # 2 already in stock + 3 just confirmed
+        assert existing.title == "Sempre Tu"
+        assert existing.author == "Colleen Hoover"
+        assert existing.description == "nova descricao"
+        assert existing.price == 8.0
+        assert existing.status == "available"
+
+        assert s.get(Book, pending_id) is None  # folded into the existing row, not kept as a second entry
+
+
+def test_post_next_merge_reactivates_a_sold_out_book(temp_db):
+    existing_id = _add_book(
+        temp_db, folder_path="book_sold_out", status="sold_out", title="Old", isbn="123", quantity=0, price=7.0,
+    )
+    pending_id = _add_book(temp_db, folder_path="book_new_copy", status="pending", title="Old", isbn="123", price=7.0)
+
+    client.post("/next", data={"book_id": pending_id, "title": "Old", "isbn": "123", "price": "7.0", "quantity": "2"})
+
+    with temp_db() as s:
+        existing = s.get(Book, existing_id)
+        assert existing.quantity == 2
+        assert existing.status == "available"  # new stock arrived - no longer sold out
+
+
+def test_dev_mode_next_does_not_merge_duplicate_isbn(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    existing_id = _add_book(
+        temp_db, folder_path="book_existing_dev", status="available", title="Old", isbn="999", quantity=1, price=7.0,
+    )
+    pending_id = _add_book(
+        temp_db, folder_path="book_pending_dev", status="pending", title="New", isbn="999", price=7.0,
+    )
+
+    client.post("/next", data={"book_id": pending_id, "title": "New", "isbn": "999", "price": "7.0", "quantity": "5"})
+
+    with temp_db() as s:
+        existing = s.get(Book, existing_id)
+        assert existing.quantity == 1  # untouched - DEV_MODE never alters available/sold_out rows
+
+        pending = s.get(Book, pending_id)
+        assert pending is not None
+        assert pending.status == "pending"  # DEV_MODE never promotes either
 
 
 def test_next_advances_to_the_next_pending_book(temp_db):

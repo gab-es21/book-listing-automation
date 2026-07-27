@@ -51,6 +51,27 @@
     border-radius: 4px;
     margin-bottom: 0.5rem;
   }
+
+  .duplicate-warning {
+    background: #fff8e6;
+    border: 1px solid var(--step-stock);
+    color: #7a5200;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.92rem;
+  }
+  button.warning {
+    background: var(--step-stock);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.warning:hover { background: #c98600; }
 {% endblock %}
 {% block content %}
 <header class="page-header">
@@ -68,6 +89,12 @@
 
 {% if book %}
 <div class="card">
+  {% if duplicate_book %}
+  <div class="duplicate-warning">
+    ⚠ Este ISBN já está em stock: <strong>{{ duplicate_book.title or duplicate_book.isbn }}</strong>
+    (quantidade atual: {{ duplicate_book.quantity }}). Confirmar vai somar a quantidade a esse livro em vez de criar um novo.
+  </div>
+  {% endif %}
   <div class="photos">
     <img src="/photo/{{ book.id }}/cover.jpg" alt="capa">
     <img src="/photo/{{ book.id }}/isbn.jpg" alt="ISBN">
@@ -132,7 +159,7 @@
     </div>
 
     <div class="actions">
-      <button type="submit" class="primary">Próximo &rarr;</button>
+      <button type="submit" class="{{ 'warning' if duplicate_book else 'primary' }}">Próximo &rarr;</button>
     </div>
   </form>
 
