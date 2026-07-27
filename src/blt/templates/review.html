@@ -73,8 +73,42 @@
     cursor: pointer;
   }
   button.warning:hover { background: #c98600; }
+
+  .review-bar { position: relative; display: flex; gap: 2px; height: 20px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .review-bar div { height: 100%; }
+  .review-legend { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }
+  .review-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .review-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
+  .inline-form { display: inline; }
+  .link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: var(--green-dark);
+    text-decoration: underline;
+    cursor: pointer;
+  }
 {% endblock %}
 {% block content %}
+{% if not is_previous %}
+<div class="progress-block">
+  <div class="review-bar">
+    <div style="width: {{ review_red_pct }}%; background: #c92a2a;" title="Sem ISBN: {{ review_red_pct }}%"></div>
+    <div style="width: {{ review_grey_pct }}%; background: var(--muted);" title="Não encontrado: {{ review_grey_pct }}%"></div>
+    <div style="width: {{ review_yellow_pct }}%; background: var(--step-stock);" title="Repetido: {{ review_yellow_pct }}%"></div>
+    <div style="width: {{ review_green_pct }}%; background: var(--green);" title="Pronto: {{ review_green_pct }}%"></div>
+  </div>
+  <div class="review-legend">
+    <span><i style="background: #c92a2a"></i>Sem ISBN {{ review_red_pct }}%</span>
+    <span><i style="background: var(--muted)"></i>Não encontrado {{ review_grey_pct }}%</span>
+    <span><i style="background: var(--step-stock)"></i>Repetido {{ review_yellow_pct }}%</span>
+    <span><i style="background: var(--green)"></i>Pronto {{ review_green_pct }}%</span>
+  </div>
+</div>
+{% endif %}
 <header class="page-header">
   {% if dev_mode %}<span class="dev-badge">DEV MODE - Próximo não avança para available</span>{% endif %}
   {% if is_previous %}
@@ -82,7 +116,13 @@
     <p class="subtitle"><a href="/review">&larr; voltar ao livro atual</a></p>
   {% elif book %}
     <h1>Livro por confirmar</h1>
-    <p class="subtitle">{{ remaining }} livro(s) por confirmar &middot; <a href="/previous">rever o anterior</a></p>
+    <p class="subtitle">
+      {{ remaining }} livro(s) por confirmar &middot; <a href="/previous">rever o anterior</a>
+      &middot;
+      <form method="post" action="/reextract-all" class="inline-form" onsubmit="return confirm('Procurar novamente todos os livros por confirmar? Isto pode demorar um pouco.');">
+        <button type="submit" class="link-button">procurar todos novamente</button>
+      </form>
+    </p>
   {% else %}
     <h1>Não há livros por confirmar</h1>
   {% endif %}
@@ -160,14 +200,13 @@
     </div>
 
     <div class="actions">
-      <button type="submit" class="{{ 'warning' if duplicate_book else 'primary' }}">Próximo &rarr;</button>
+      <button type="submit" class="{{ 'warning' if duplicate_book else 'primary' }}">{{ 'Adicionar' if duplicate_book else 'Criar' }} &rarr;</button>
     </div>
   </form>
 
   {% if not is_previous %}
   <div class="secondary-actions">
-    <form method="get" action="/review">
-      <input type="hidden" name="after" value="{{ book.id }}">
+    <form method="post" action="/skip/{{ book.id }}">
       <button type="submit" class="secondary">Passar por agora</button>
     </form>
     {% if book.isbn %}
