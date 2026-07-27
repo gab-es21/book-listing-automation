@@ -4,6 +4,9 @@ always reachable from a persistent sidebar: raw images -> sorted images ->
 detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
+import random
+import time
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -87,6 +90,57 @@ def _find_isbn_duplicate(s, book: Book) -> Book | None:
     return s.execute(
         select(Book).where(Book.isbn == book.isbn, Book.id != book.id, Book.status.in_(_STOCKED_STATUSES))
     ).scalars().first()
+
+
+def _classify_review_book(s, book: Book) -> str:
+    """One of "red" (no ISBN at all), "grey" (ISBN but nothing resolved),
+    "yellow" (resolved, but ISBN already stocked - a duplicate), or "green"
+    (resolved, unique, just needs confirming)."""
+    if not book.isbn:
+        return "red"
+    if not book.title:
+        return "grey"
+    if _find_isbn_duplicate(s, book) is not None:
+        return "yellow"
+    return "green"
+
+
+def _review_queue_breakdown(s) -> dict:
+    books = s.execute(select(Book).where(_REVIEW_FILTER)).scalars().all()
+    counts = {"red": 0, "grey": 0, "yellow": 0, "green": 0}
+    for book in books:
+        counts[_classify_review_book(s, book)] += 1
+    total = len(books)
+
+    def _pct(x):
+        return round(x / total * 100, 1) if total else 0.0
+
+    return {
+        "review_red_count": counts["red"], "review_grey_count": counts["grey"],
+        "review_yellow_count": counts["yellow"], "review_green_count": counts["green"],
+        "review_red_pct": _pct(counts["red"]), "review_grey_pct": _pct(counts["grey"]),
+        "review_yellow_pct": _pct(counts["yellow"]), "review_green_pct": _pct(counts["green"]),
+    }
+
+
+def _reextract_one(s, book: Book) -> None:
+    """Re-runs barcode+Almedina extraction for one book, applying the result
+    (or lack of one) exactly like extract_pending_books does."""
+    if settings.DEV_MODE:
+        fields = _extract_with_dev_cache(s, Path(book.folder_path))
+    else:
+        fields = extract_book_fields(Path(book.folder_path))
+    if fields["title"]:
+        listing = compose_listing(fields)
+        book.title = listing["title"]
+        book.author = listing["author"]
+        book.isbn = listing["isbn"]
+        book.description = listing["description"]
+        book.price = listing["price"]
+        book.status = "pending"
+    else:
+        book.isbn = fields["isbn"]
+        book.status = "failed"
 
 
 def _sidebar_counts(s) -> dict:
@@ -235,28 +289,25 @@ def detect_books():
 # -------- Detected book waiting confirmation --------
 
 @app.get("/review", response_class=HTMLResponse)
-def review_form(request: Request, after: int = 0):
+def review_form(request: Request):
     with db.SessionLocal() as s:
-        query = select(Book).where(_REVIEW_FILTER).order_by(Book.id)
-        book = None
-        if after:
-            # cyclic cursor: next unresolved/failed book after the last one
-            # shown, wrapping back to the first. Used by the "Passar por
-            # agora" skip button (leaves the book untouched, just deprioritized
-            # until the rest of the queue cycles back to it) and, in
-            # DEV_MODE, by every Próximo click too, since DEV_MODE never
-            # promotes anything to available so nothing is ever consumed.
-            book = s.execute(query.where(Book.id > after)).scalars().first()
-        if book is None:
-            book = s.execute(query).scalars().first()
+        # Never-skipped books first (oldest by id), then skipped books
+        # oldest-skip-first - a real FIFO carousel: "Passar por agora" (and,
+        # in DEV_MODE, every Próximo click, since nothing is ever consumed
+        # there) pushes a book behind everything else instead of just
+        # showing it once and losing its place the moment you move on.
+        book = s.execute(
+            select(Book).where(_REVIEW_FILTER).order_by(Book.skipped_at.asc().nullsfirst(), Book.id.asc())
+        ).scalars().first()
         duplicate_book = None
         if book is not None and not settings.DEV_MODE:
             duplicate_book = _find_isbn_duplicate(s, book)
         ctx = _sidebar_counts(s)
+        breakdown = _review_queue_breakdown(s)
         return templates.TemplateResponse(
             request,
             "review.html",
-            {**ctx, "active_step": "review", "book": book, "remaining": ctx["review_count"],
+            {**ctx, **breakdown, "active_step": "review", "book": book, "remaining": ctx["review_count"],
              "is_previous": False, "dev_mode": settings.DEV_MODE, "duplicate_book": duplicate_book},
         )
 
@@ -297,11 +348,28 @@ def submit_next(
         book.description = description or None
         book.price = price
         book.quantity = quantity
-        if not settings.DEV_MODE:
+        if settings.DEV_MODE:
+            # Nothing is ever consumed in DEV_MODE, so "next" means the same
+            # thing as a skip: push this book behind the rest of the queue
+            # rather than showing it again immediately.
+            book.skipped_at = datetime.now(timezone.utc)
+        else:
             book.status = "available"
         s.commit()
-    if settings.DEV_MODE:
-        return RedirectResponse(f"/review?after={book_id}", status_code=303)
+    return RedirectResponse("/review", status_code=303)
+
+
+@app.post("/skip/{book_id}")
+def skip_book(book_id: int):
+    """Passar por agora: leaves the book untouched, just deprioritized until
+    the rest of the queue has cycled through - a real FIFO carousel, not a
+    one-shot "show me the next one"."""
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        book.skipped_at = datetime.now(timezone.utc)
+        s.commit()
     return RedirectResponse("/review", status_code=303)
 
 
@@ -313,22 +381,24 @@ def reextract_book(book_id: int):
         book = s.get(Book, book_id)
         if book is None:
             raise HTTPException(404)
-        if settings.DEV_MODE:
-            fields = _extract_with_dev_cache(s, Path(book.folder_path))
-        else:
-            fields = extract_book_fields(Path(book.folder_path))
-        if fields["title"]:
-            listing = compose_listing(fields)
-            book.title = listing["title"]
-            book.author = listing["author"]
-            book.isbn = listing["isbn"]
-            book.description = listing["description"]
-            book.price = listing["price"]
-            book.status = "pending"
-        else:
-            book.isbn = fields["isbn"]
-            book.status = "failed"
+        _reextract_one(s, book)
         s.commit()
+    return RedirectResponse("/review", status_code=303)
+
+
+@app.post("/reextract-all")
+def reextract_all_books():
+    """Procurar todos novamente: re-runs extraction for every book still
+    waiting on confirmation (failed or already resolved), not just the one
+    currently shown. Paced the same way extract_pending_books is, to stay
+    well under Almedina's observed rate limit across a multi-book run."""
+    with db.SessionLocal() as s:
+        books = s.execute(select(Book).where(_REVIEW_FILTER)).scalars().all()
+        for i, book in enumerate(books):
+            if i > 0:
+                time.sleep(random.uniform(2, 5))
+            _reextract_one(s, book)
+            s.commit()
     return RedirectResponse("/review", status_code=303)
 
 
