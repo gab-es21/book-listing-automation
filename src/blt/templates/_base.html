@@ -59,7 +59,7 @@
   .app-layout { display: flex; min-height: 100vh; }
 
   .sidebar {
-    flex: 0 0 260px;
+    flex: 0 0 370px;
     background: #fff;
     border-right: 1px solid var(--border);
     padding: 1.5rem 1rem;
@@ -70,14 +70,14 @@
   }
   .sidebar-title {
     display: block;
-    font-weight: 700;
-    font-size: 1.1rem;
     margin-bottom: 1.25rem;
     padding: 0 0.5rem;
-    color: #1a1a1a;
-    text-decoration: none;
   }
-  .sidebar-title:hover { color: var(--green-dark); }
+  .sidebar-logo {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
   .sidebar-item {
     display: flex;
     justify-content: space-between;
@@ -145,7 +145,7 @@
 <body>
 <div class="app-layout">
   <nav class="sidebar">
-    <a class="sidebar-title" href="/">BookListing</a>
+    <a class="sidebar-title" href="/"><img src="/static/icon.png" alt="blt - Book Listing Automation" class="sidebar-logo"></a>
     <a class="sidebar-item {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Imagens raw</span><span class="badge">{{ raw_count }}</span>
     </a>
