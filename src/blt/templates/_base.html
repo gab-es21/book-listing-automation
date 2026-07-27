@@ -127,6 +127,9 @@
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   button.primary:hover { background: var(--green-dark); }
   button.secondary {
@@ -162,10 +165,10 @@
   <div class="content">
     <div class="progress-block">
       <div class="progress-bar">
-        <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_pct }}%"></a>
-        <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_pct }}%"></a>
-        <a href="/review" style="width: {{ review_pct }}%; background: var(--step-review);" title="Por confirmar: {{ review_pct }}%"></a>
-        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--step-stock);" title="Stock: {{ stock_pct }}%"></a>
+        <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_units_display }} ({{ raw_pct }}%)"></a>
+        <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_count }} ({{ sorted_pct }}%)"></a>
+        <a href="/review" style="width: {{ review_pct }}%; background: var(--step-review);" title="Por confirmar: {{ review_count }} ({{ review_pct }}%)"></a>
+        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--step-stock);" title="Stock: {{ stock_count }} ({{ stock_pct }}%)"></a>
         {% if unit_pct %}<div class="progress-ticks" style="background-size: {{ unit_pct }}% 100%;"></div>{% endif %}
       </div>
       <div class="progress-legend">

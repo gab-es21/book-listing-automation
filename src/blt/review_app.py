@@ -120,6 +120,9 @@ def _review_queue_breakdown(s) -> dict:
         "review_yellow_count": counts["yellow"], "review_green_count": counts["green"],
         "review_red_pct": _pct(counts["red"]), "review_grey_pct": _pct(counts["grey"]),
         "review_yellow_pct": _pct(counts["yellow"]), "review_green_pct": _pct(counts["green"]),
+        # width of one book, as a % of the whole bar - same trick as the main
+        # progress bar's unit_pct, for a tick mark per book.
+        "review_unit_pct": round(100 / total, 4) if total else 0,
     }
 
 
@@ -168,6 +171,10 @@ def _sidebar_counts(s) -> dict:
         "sorted_count": sorted_count,
         "review_count": review_count,
         "stock_count": stock_count,
+        # book-equivalent count backing raw_pct (may be a half-integer, e.g.
+        # "2.5") - shown alongside the percentage on hover; formatted to drop
+        # a pointless trailing ".0" for whole numbers.
+        "raw_units_display": f"{raw_units:g}",
         "raw_pct": _pct(raw_units),
         "sorted_pct": _pct(sorted_count),
         "review_pct": _pct(review_count),
