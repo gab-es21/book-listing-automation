@@ -192,6 +192,33 @@ def test_progress_header_present_on_every_page(temp_db):
         assert 'class="progress-block"' in r.text, f"missing on {path}"
 
 
+def test_review_status_bar_breaks_down_the_queue_by_state(temp_db):
+    _add_book(temp_db, folder_path="book_status_red", status="failed", isbn=None)
+    _add_book(temp_db, folder_path="book_status_grey", status="failed", isbn="1")
+    _add_book(
+        temp_db, folder_path="book_status_stocked", status="available", title="Dup", isbn="2", quantity=1, price=7.0,
+    )
+    _add_book(temp_db, folder_path="book_status_yellow", status="pending", title="Dup", isbn="2", price=7.0)
+    _add_book(temp_db, folder_path="book_status_green", status="pending", title="Unique", isbn="3", price=7.0)
+
+    r = client.get("/review")
+
+    # 4 books in the review queue (the stocked one isn't part of it): 1 each
+    # of red/grey/yellow/green -> 25% apiece
+    assert 'title="Sem ISBN: 25.0%"' in r.text
+    assert 'title="Não encontrado: 25.0%"' in r.text
+    assert 'title="Repetido: 25.0%"' in r.text
+    assert 'title="Pronto: 25.0%"' in r.text
+
+
+def test_review_status_bar_hidden_on_the_previous_page(temp_db):
+    _add_book(temp_db, folder_path="book_status_prev", status="available", title="Prev")
+
+    r = client.get("/previous")
+
+    assert '<div class="review-bar">' not in r.text
+
+
 # -------- Raw images --------
 
 def test_raw_page_shows_proposed_pairs_and_leftover(monkeypatch, tmp_path, temp_db):
@@ -391,7 +418,7 @@ def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" in r.text
-    assert '<button type="submit" class="warning">' in r.text
+    assert '<button type="submit" class="warning">Adicionar &rarr;</button>' in r.text
 
 
 def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
@@ -400,7 +427,7 @@ def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" not in r.text
-    assert '<button type="submit" class="primary">' in r.text
+    assert '<button type="submit" class="primary">Criar &rarr;</button>' in r.text
 
 
 def test_dev_mode_review_form_never_shows_duplicate_warning(monkeypatch, temp_db):
@@ -539,29 +566,52 @@ def test_next_advances_to_the_next_pending_book(temp_db):
     assert "First" not in r.text
 
 
-def test_skip_button_shows_next_book_without_touching_the_skipped_one(temp_db):
+def test_skip_moves_to_the_next_book_without_touching_the_skipped_one(temp_db):
     first_id = _add_book(temp_db, folder_path="book_skip_a", title="First")
     _add_book(temp_db, folder_path="book_skip_b", title="Second")
 
-    r = client.get("/review", params={"after": first_id})
+    client.post(f"/skip/{first_id}")
+    r = client.get("/review")
 
     assert "Second" in r.text
     with temp_db() as s:
         skipped = s.get(Book, first_id)
         assert skipped.status == "pending"  # untouched - still waiting in the queue
         assert skipped.title == "First"
+        assert skipped.skipped_at is not None
 
 
-def test_skip_button_wraps_back_to_the_skipped_book_once_the_queue_cycles(temp_db):
-    first_id = _add_book(temp_db, folder_path="book_skip_c", title="First")
-    last_id = _add_book(temp_db, folder_path="book_skip_d", title="Second")
+def test_skip_is_a_real_carousel_survives_confirming_the_next_book(temp_db):
+    """The actual bug being fixed: a one-shot ?after= cursor showed the next
+    book once, but confirming *that* book reset the ordering back to plain
+    id order - putting the skipped book right back on top immediately,
+    instead of leaving it at the back until the rest of the queue cycles."""
+    first_id = _add_book(temp_db, folder_path="book_carousel_a", title="First")
+    second_id = _add_book(temp_db, folder_path="book_carousel_b", title="Second")
+    _add_book(temp_db, folder_path="book_carousel_c", title="Third")
 
-    r = client.get("/review", params={"after": last_id})
+    client.post(f"/skip/{first_id}")
+    client.post("/next", data={"book_id": second_id, "price": "8.0", "quantity": "1"})
 
-    assert "First" in r.text
+    r = client.get("/review")
+    assert "Third" in r.text  # not "First" - it's still deprioritized
+    assert "First" not in r.text
+
+
+def test_skip_twice_forms_a_fifo_queue_at_the_back(temp_db):
+    first_id = _add_book(temp_db, folder_path="book_fifo_a", title="First")
+    second_id = _add_book(temp_db, folder_path="book_fifo_b", title="Second")
+    _add_book(temp_db, folder_path="book_fifo_c", title="Third")
+
+    client.post(f"/skip/{first_id}")
+    client.post(f"/skip/{second_id}")
+
     with temp_db() as s:
-        assert s.get(Book, first_id).status == "pending"
-        assert s.get(Book, last_id).status == "pending"
+        ordered = s.execute(
+            select(Book).where(review_app._REVIEW_FILTER)
+            .order_by(Book.skipped_at.asc().nullsfirst(), Book.id.asc())
+        ).scalars().all()
+        assert [b.title for b in ordered] == ["Third", "First", "Second"]  # never-skipped first, then FIFO
 
 
 def test_review_form_has_a_skip_link_pointing_at_the_current_book(temp_db):
@@ -569,7 +619,7 @@ def test_review_form_has_a_skip_link_pointing_at_the_current_book(temp_db):
 
     r = client.get("/review")
 
-    assert f'<input type="hidden" name="after" value="{book_id}">' in r.text
+    assert f'action="/skip/{book_id}"' in r.text
     assert "Passar por agora" in r.text
 
 
@@ -585,7 +635,7 @@ def test_dev_mode_next_does_not_promote_saves_edits_and_stays_pending(monkeypatc
         assert book.status == "pending"  # but never promoted
 
 
-def test_dev_mode_next_cycles_to_the_next_book_via_after_cursor(monkeypatch, temp_db):
+def test_dev_mode_next_cycles_to_the_next_book(monkeypatch, temp_db):
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
     first_id = _add_book(temp_db, folder_path="book_a", title="First")
     _add_book(temp_db, folder_path="book_b", title="Second")
@@ -594,15 +644,21 @@ def test_dev_mode_next_cycles_to_the_next_book_via_after_cursor(monkeypatch, tem
 
     assert "Second" in r.text
     with temp_db() as s:
-        assert s.get(Book, first_id).status == "pending"  # book_a never left the queue
+        book = s.get(Book, first_id)
+        assert book.status == "pending"  # book_a never left the queue
+        assert book.skipped_at is not None  # pushed behind the rest, same as a manual skip
 
 
 def test_dev_mode_wraps_around_after_the_last_book(monkeypatch, temp_db):
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
-    _add_book(temp_db, folder_path="book_a", title="First")
-    last_id = _add_book(temp_db, folder_path="book_b", title="Second")
+    first_id = _add_book(temp_db, folder_path="book_a", title="First")
+    second_id = _add_book(temp_db, folder_path="book_b", title="Second")
 
-    r = client.get("/review", params={"after": last_id})
+    client.post("/next", data={"book_id": first_id, "title": "First", "price": "7.0", "quantity": "1"})
+    r = client.post(
+        "/next", data={"book_id": second_id, "title": "Second", "price": "7.0", "quantity": "1"},
+        follow_redirects=True,
+    )
 
     assert "First" in r.text  # wrapped back to the start, nothing lost
 
@@ -712,6 +768,61 @@ def test_review_form_reextract_button_hidden_without_isbn(temp_db):
     r = client.get("/review")
 
     assert 'action="/reextract/' not in r.text
+
+
+def test_reextract_all_resolves_every_book_in_the_queue(monkeypatch, temp_db):
+    a_id = _add_book(temp_db, folder_path="book_bulk_a", status="failed", isbn="1")
+    b_id = _add_book(temp_db, folder_path="book_bulk_b", status="failed", isbn="2")
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields",
+        lambda folder: {"title": f"Resolved {folder}", "author": None, "isbn": "999"},
+    )
+
+    client.post("/reextract-all")
+
+    with temp_db() as s:
+        assert s.get(Book, a_id).status == "pending"
+        assert s.get(Book, b_id).status == "pending"
+        assert s.get(Book, a_id).title.startswith("Resolved")
+        assert s.get(Book, b_id).title.startswith("Resolved")
+
+
+def test_reextract_all_paces_requests_between_books_not_before_the_first(monkeypatch, temp_db):
+    _add_book(temp_db, folder_path="book_bulk_c", status="failed", isbn="1")
+    _add_book(temp_db, folder_path="book_bulk_d", status="failed", isbn="2")
+    _add_book(temp_db, folder_path="book_bulk_e", status="failed", isbn="3")
+    sleep_calls = []
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": None})
+
+    client.post("/reextract-all")
+
+    assert len(sleep_calls) == 2  # paced between books, but not before the first one
+
+
+def test_reextract_all_uses_dev_cache_in_dev_mode(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    book_id = _add_book(temp_db, folder_path="book_bulk_dev", status="failed", isbn="1")
+    monkeypatch.setattr(review_app, "extract_book_fields", _boom_if_called)
+    monkeypatch.setattr(
+        review_app, "_extract_with_dev_cache",
+        lambda s, folder: {"title": "Cached", "author": None, "isbn": "1"},
+    )
+
+    client.post("/reextract-all")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id).title == "Cached"
+
+
+def test_review_form_has_a_reextract_all_button(temp_db):
+    _add_book(temp_db, folder_path="book_bulk_button", status="failed", isbn="1")
+
+    r = client.get("/review")
+
+    assert 'action="/reextract-all"' in r.text
+    assert "procurar todos novamente" in r.text
 
 
 # -------- Stock --------

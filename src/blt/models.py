@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -23,6 +25,11 @@ class Book(Base):
     folder_path: Mapped[str] = mapped_column(String(512), unique=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Set when "Passar por agora" is used (or, in DEV_MODE, on every Próximo
+    # click, since nothing is ever consumed there): pushes the book behind
+    # every never-skipped book, and behind any book skipped earlier than it -
+    # a real FIFO carousel rather than a one-shot "show me the next one".
+    skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
 
 
 # One row per physical copy sold - snapshots title/isbn/price at the moment
