@@ -288,6 +288,17 @@ def mark_one_sold(book_id: int):
     return RedirectResponse("/stock", status_code=303)
 
 
+@app.post("/delete/{book_id}")
+def delete_book(book_id: int):
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        s.delete(book)
+        s.commit()
+    return RedirectResponse("/stock", status_code=303)
+
+
 @app.get("/photo/{book_id}/{name}")
 def photo(book_id: int, name: str):
     if name not in _PHOTO_NAMES:

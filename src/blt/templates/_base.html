@@ -31,7 +31,16 @@
     height: 100vh;
     overflow-y: auto;
   }
-  .sidebar-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 1.25rem; padding: 0 0.5rem; }
+  .sidebar-title {
+    display: block;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: 1.25rem;
+    padding: 0 0.5rem;
+    color: #1a1a1a;
+    text-decoration: none;
+  }
+  .sidebar-title:hover { color: var(--green-dark); }
   .sidebar-item {
     display: flex;
     justify-content: space-between;
@@ -97,7 +106,7 @@
 <body>
 <div class="app-layout">
   <nav class="sidebar">
-    <div class="sidebar-title">blt</div>
+    <a class="sidebar-title" href="/">BookListing</a>
     <a class="sidebar-item {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
       <span>Imagens raw</span><span class="badge">{{ raw_count }}</span>
     </a>

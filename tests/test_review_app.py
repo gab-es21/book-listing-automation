@@ -46,6 +46,12 @@ def test_dashboard_shows_flow_with_all_four_steps(temp_db):
     assert "Stock" in r.text
 
 
+def test_sidebar_title_links_back_to_dashboard(temp_db):
+    r = client.get("/stock")
+
+    assert '<a class="sidebar-title" href="/">BookListing</a>' in r.text
+
+
 def test_sidebar_badges_reflect_current_counts(monkeypatch, tmp_path, temp_db):
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -432,6 +438,39 @@ def test_stock_view_all_shows_everything_without_pagination(temp_db):
 
     assert r.text.count("Marcar 1 vendido") == 25
     assert "Página" not in r.text
+
+
+def test_delete_removes_available_book(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_del_avail", status="available", title="Gone Soon")
+
+    r = client.post(f"/delete/{book_id}", follow_redirects=False)
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/stock"
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None
+
+
+def test_delete_removes_sold_out_book(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_del_sold", status="sold_out", quantity=0, title="Gone")
+
+    client.post(f"/delete/{book_id}")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None
+
+
+def test_delete_unknown_book_404s(temp_db):
+    r = client.post("/delete/999999")
+    assert r.status_code == 404
+
+
+def test_stock_page_has_a_delete_button_per_row(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_del_ui", status="available", title="Delete Me")
+
+    r = client.get("/stock")
+
+    assert f'action="/delete/{book_id}"' in r.text
 
 
 def test_mark_sold_decrements_quantity(temp_db):

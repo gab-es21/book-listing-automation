@@ -27,6 +27,18 @@
   }
   button.sold:hover { border-color: var(--green); color: var(--green-dark); }
 
+  button.delete {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+  }
+  button.delete:hover { border-color: #c92a2a; background: #fff1f0; color: #c92a2a; }
+
   tr.sold-out { background: #fff1f0; color: #9a6a6a; }
   .sold-out-label { color: #c92a2a; font-weight: 600; font-size: 0.85rem; }
 
@@ -62,6 +74,7 @@
       <th>{{ sort_link('price', 'Preço') }}</th>
       <th>{{ sort_link('quantity', 'Restam') }}</th>
       <th></th>
+      <th></th>
     </tr>
     {% for book in books %}
     <tr class="{{ 'sold-out' if book.status == 'sold_out' else '' }}">
@@ -78,6 +91,13 @@
             <button type="submit" class="sold">Marcar 1 vendido</button>
           </form>
         {% endif %}
+      </td>
+      <td>
+        <form method="post" action="/delete/{{ book.id }}" onsubmit="return confirm('Eliminar este livro da base de dados? Não pode ser desfeito.');">
+          <button type="submit" class="delete" title="Eliminar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+          </button>
+        </form>
       </td>
     </tr>
     {% endfor %}
