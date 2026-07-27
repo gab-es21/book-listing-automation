@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime, Float, Integer, Text, func
+from sqlalchemy import ForeignKey, String, DateTime, Float, Integer, Text, func
 
 class Base(DeclarativeBase): pass
 
@@ -21,3 +21,16 @@ class Book(Base):
     folder_path: Mapped[str] = mapped_column(String(512), unique=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# One row per physical copy sold - snapshots title/isbn/price at the moment
+# of sale rather than joining back to Book, so history survives even if the
+# Book row is later deleted (see the /delete route on the stock page).
+class Sale(Base):
+    __tablename__ = "sales"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id"), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    isbn: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sold_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())

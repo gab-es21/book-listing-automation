@@ -6,7 +6,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from blt import review_app
-from blt.models import Book
+from blt.models import Book, Sale
 from blt.review_app import app
 
 client = TestClient(app)
@@ -471,6 +471,117 @@ def test_stock_page_has_a_delete_button_per_row(temp_db):
     r = client.get("/stock")
 
     assert f'action="/delete/{book_id}"' in r.text
+
+
+def test_mark_sold_records_a_sale_snapshot(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_sale", status="available", quantity=2,
+                         title="Sempre Tu", isbn="9789896689704", price=8.5)
+
+    client.post(f"/sold/{book_id}")
+
+    with temp_db() as s:
+        sale = s.execute(select(Sale)).scalar_one()
+        assert sale.book_id == book_id
+        assert sale.title == "Sempre Tu"
+        assert sale.isbn == "9789896689704"
+        assert sale.price == 8.5
+
+
+def test_sale_survives_book_deletion(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_sale_del", status="available", quantity=1, title="Gone Later", price=7.0)
+
+    client.post(f"/sold/{book_id}")  # quantity 1 -> 0, status becomes sold_out
+    client.post(f"/delete/{book_id}")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None  # book itself is gone
+        sale = s.execute(select(Sale)).scalar_one()
+        assert sale.title == "Gone Later"  # sale record's own snapshot is untouched
+        assert sale.price == 7.0
+
+
+def test_stock_edit_saves_all_fields(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_reprice", status="available",
+                         title="Old Title", author="Old Author", isbn="000", price=7.0, quantity=1)
+
+    r = client.post(f"/stock/edit/{book_id}", data={
+        "title": "New Title", "author": "New Author", "isbn": "9789896689704",
+        "price": "9.5", "quantity": "3",
+    }, follow_redirects=False)
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/stock"
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.title == "New Title"
+        assert book.author == "New Author"
+        assert book.isbn == "9789896689704"
+        assert book.price == 9.5
+        assert book.quantity == 3
+        assert book.status == "available"
+
+
+def test_stock_edit_setting_quantity_to_zero_marks_sold_out(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_zero", status="available", price=7.0, quantity=2)
+
+    client.post(f"/stock/edit/{book_id}", data={"price": "7.0", "quantity": "0"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.quantity == 0
+        assert book.status == "sold_out"
+
+
+def test_stock_edit_unknown_book_404s(temp_db):
+    r = client.post("/stock/edit/999999", data={"price": "9.5", "quantity": "1"})
+    assert r.status_code == 404
+
+
+def test_stock_page_has_edit_button_and_hidden_edit_row_with_all_fields(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_editar", status="available", price=7.0)
+
+    r = client.get("/stock")
+
+    assert f"toggleEdit({book_id})" in r.text
+    assert f'id="edit-row-{book_id}"' in r.text
+    assert f'action="/stock/edit/{book_id}"' in r.text
+    assert f'id="edit-title-{book_id}"' in r.text
+    assert f'id="edit-author-{book_id}"' in r.text
+    assert f'id="edit-isbn-{book_id}"' in r.text
+    assert f'id="edit-quantity-{book_id}"' in r.text
+
+
+def test_stock_edit_save_and_discard_buttons_start_disabled_until_a_field_changes(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_dirty", status="available", price=7.0)
+
+    r = client.get("/stock")
+
+    save_btn = f'id="save-btn-{book_id}" title="Guardar" disabled'
+    discard_btn = f'id="discard-btn-{book_id}" title="Descartar" disabled'
+    assert save_btn in r.text
+    assert discard_btn in r.text
+    assert f"markDirty({book_id})" in r.text  # wired on the editable fields
+
+
+def test_dashboard_shows_total_revenue_and_sold_count(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_rev", status="available", quantity=1, price=10.0)
+    client.post(f"/sold/{book_id}")
+
+    r = client.get("/")
+
+    assert "10.00" in r.text
+    assert "Receita total" in r.text
+    assert "Livros vendidos" in r.text
+
+
+def test_dashboard_weekly_sales_table_reflects_a_real_sale(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_weekly", status="available", quantity=1, price=12.5)
+    client.post(f"/sold/{book_id}")
+
+    r = client.get("/")
+
+    assert "Vendas por semana" in r.text
+    assert "12.50" in r.text
 
 
 def test_mark_sold_decrements_quantity(temp_db):

@@ -16,7 +16,7 @@ from . import db, group_photos
 from .config import settings
 from .extract import extract_pending_books
 from .images import IMG_EXTS, load_image_any
-from .models import Book
+from .models import Book, Sale
 
 _HEIC_EXTS = {".heic", ".heif"}
 
@@ -72,11 +72,54 @@ def _sidebar_counts(s) -> dict:
     }
 
 
+def _metrics(s) -> dict:
+    weekly_sales = s.execute(
+        select(
+            func.strftime("%Y-W%W", Sale.sold_at).label("week"),
+            func.count(Sale.id).label("count"),
+            func.sum(Sale.price).label("revenue"),
+        ).group_by("week").order_by(func.strftime("%Y-W%W", Sale.sold_at).desc())
+    ).all()
+    weekly_added = s.execute(
+        select(
+            func.strftime("%Y-W%W", Book.created_at).label("week"),
+            func.count(Book.id).label("count"),
+        ).group_by("week").order_by(func.strftime("%Y-W%W", Book.created_at).desc())
+    ).all()
+    total_revenue = s.execute(select(func.sum(Sale.price))).scalar_one() or 0.0
+    total_sold = s.execute(select(func.count(Sale.id))).scalar_one()
+    return {
+        "weekly_sales": weekly_sales,
+        "weekly_added": weekly_added,
+        "total_revenue": total_revenue,
+        "total_sold": total_sold,
+        "revenue_chart": _bar_chart_data([(row.week, row.revenue) for row in weekly_sales]),
+        "added_chart": _bar_chart_data([(row.week, row.count) for row in weekly_added]),
+    }
+
+
+def _bar_chart_data(pairs: list) -> list:
+    """
+    pairs: [(label, value), ...] most-recent-first (as the weekly queries
+    return them for the table). Returns the same data oldest-first (so the
+    chart reads left-to-right forward in time) with each value's height as a
+    0-100 percentage of the series max, ready for an SVG bar to consume
+    directly without doing math in the template.
+    """
+    items = list(reversed(pairs))
+    max_v = max((v or 0) for _, v in items) if items else 0
+    return [
+        {"label": label, "value": v or 0, "pct": round((v or 0) / max_v * 100, 1) if max_v else 0}
+        for label, v in items
+    ]
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     with db.SessionLocal() as s:
         ctx = _sidebar_counts(s)
-        return templates.TemplateResponse(request, "dashboard.html", {**ctx, "active_step": None})
+        metrics = _metrics(s)
+        return templates.TemplateResponse(request, "dashboard.html", {**ctx, **metrics, "active_step": None})
 
 
 # -------- Raw images --------
@@ -281,9 +324,33 @@ def mark_one_sold(book_id: int):
         book = s.get(Book, book_id)
         if book is None:
             raise HTTPException(404)
+        s.add(Sale(book_id=book.id, title=book.title, isbn=book.isbn, price=book.price))
         book.quantity = max(book.quantity - 1, 0)
         if book.quantity == 0:
             book.status = "sold_out"
+        s.commit()
+    return RedirectResponse("/stock", status_code=303)
+
+
+@app.post("/stock/edit/{book_id}")
+def update_book_in_stock(
+    book_id: int,
+    title: str = Form(""),
+    author: str = Form(""),
+    isbn: str = Form(""),
+    price: float = Form(...),
+    quantity: int = Form(1),
+):
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        book.title = title or None
+        book.author = author or None
+        book.isbn = isbn or None
+        book.price = price
+        book.quantity = quantity
+        book.status = "sold_out" if quantity <= 0 else "available"
         s.commit()
     return RedirectResponse("/stock", status_code=303)
 

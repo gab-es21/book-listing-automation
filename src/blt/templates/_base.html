@@ -64,6 +64,8 @@
     font-weight: 600;
   }
   .sidebar-item.active .badge { background: var(--green); color: #fff; }
+  .sidebar-item-label { display: flex; align-items: center; gap: 0.6rem; }
+  .sidebar-item-label svg { flex-shrink: 0; }
 
   .content { flex: 1; min-width: 0; padding: 2rem; max-width: 1100px; }
 
@@ -108,16 +110,16 @@
   <nav class="sidebar">
     <a class="sidebar-title" href="/">BookListing</a>
     <a class="sidebar-item {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
-      <span>Imagens raw</span><span class="badge">{{ raw_count }}</span>
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Imagens raw</span><span class="badge">{{ raw_count }}</span>
     </a>
     <a class="sidebar-item {{ 'active' if active_step == 'sorted' else '' }}" href="/sorted">
-      <span>Imagens ordenadas</span><span class="badge">{{ sorted_count }}</span>
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg> Imagens ordenadas</span><span class="badge">{{ sorted_count }}</span>
     </a>
     <a class="sidebar-item {{ 'active' if active_step == 'review' else '' }}" href="/review">
-      <span>Livros por confirmar</span><span class="badge">{{ review_count }}</span>
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Livros por confirmar</span><span class="badge">{{ review_count }}</span>
     </a>
     <a class="sidebar-item {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
-      <span>Stock</span><span class="badge">{{ stock_count }}</span>
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Stock</span><span class="badge">{{ stock_count }}</span>
     </a>
   </nav>
   <div class="content">

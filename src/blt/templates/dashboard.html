@@ -17,12 +17,68 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
   .flow-step:hover { border-color: var(--green); }
-  .flow-icon { font-size: 2rem; }
+  .flow-icon { color: var(--green-dark); }
   .flow-label { font-size: 0.95rem; font-weight: 600; text-align: center; }
   .flow-count { font-size: 1.6rem; font-weight: 700; color: var(--green-dark); }
   .flow-arrow { font-size: 1.5rem; color: var(--muted); }
+
+  .stats-row { display: flex; gap: 1rem; margin: 2rem 0 1.5rem; }
+  .stat-card { text-align: center; min-width: 160px; }
+  .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--green-dark); }
+  .stat-label { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+
+  .metrics-grid { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+  .metrics-grid .card { flex: 1; min-width: 280px; }
+  .metrics-grid h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+  .metrics-grid table { width: 100%; border-collapse: collapse; }
+  .metrics-grid th, .metrics-grid td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+
+  .chart-wrap { width: 100%; margin-bottom: 1rem; }
+  .bar-chart { width: 100%; aspect-ratio: 320 / 130; display: block; }
+  .bar-chart rect { fill: var(--green); }
+  .bar-chart .baseline { stroke: var(--border); stroke-width: 1; }
+  .bar-chart text { fill: var(--muted); font-size: 7px; font-family: inherit; }
+  .chart-empty { color: var(--muted); font-size: 0.9rem; }
 {% endblock %}
 {% block content %}
+{% macro step_icon(name) %}
+{% if name == "raw" %}
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+{% elif name == "sorted" %}
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+{% elif name == "review" %}
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+{% elif name == "stock" %}
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+{% endif %}
+{% endmacro %}
+
+{% macro bar_chart(data) %}
+{% if data %}
+{% set chart_w = 320 %}
+{% set baseline_y = 92 %}
+{% set bar_area_h = 76 %}
+{% set n = data|length %}
+{% set slot_w = chart_w / n %}
+{% set bar_w = [slot_w * 0.55, 30] | min %}
+<div class="chart-wrap">
+  <svg viewBox="0 0 {{ chart_w }} 130" class="bar-chart">
+    <line class="baseline" x1="0" y1="{{ baseline_y }}" x2="{{ chart_w }}" y2="{{ baseline_y }}"></line>
+    {% for item in data %}
+    {% set bar_h = (item.pct / 100 * bar_area_h) | round(1) %}
+    {% set slot_center = (loop.index0 * slot_w + slot_w / 2) | round(1) %}
+    <rect x="{{ (slot_center - bar_w / 2) | round(1) }}" y="{{ (baseline_y - bar_h) | round(1) }}" width="{{ bar_w | round(1) }}" height="{{ bar_h }}" rx="3" ry="3">
+      <title>{{ item.label }}: {{ item.value }}</title>
+    </rect>
+    <text x="{{ slot_center }}" y="{{ baseline_y + 16 }}" text-anchor="middle">{{ item.label[-3:] }}</text>
+    {% endfor %}
+  </svg>
+</div>
+{% else %}
+<p class="chart-empty">Sem dados ainda.</p>
+{% endif %}
+{% endmacro %}
+
 <header class="page-header">
   <h1>blt</h1>
   <p class="subtitle">Fluxo de listagem de livros - escolhe um passo à esquerda, ou aqui em baixo.</p>
@@ -30,27 +86,70 @@
 
 <div class="flow">
   <a class="flow-step" href="/raw">
-    <div class="flow-icon">📷</div>
+    <div class="flow-icon">{{ step_icon("raw") }}</div>
     <div class="flow-label">Imagens raw</div>
     <div class="flow-count">{{ raw_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
   <a class="flow-step" href="/sorted">
-    <div class="flow-icon">📦</div>
+    <div class="flow-icon">{{ step_icon("sorted") }}</div>
     <div class="flow-label">Imagens ordenadas</div>
     <div class="flow-count">{{ sorted_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
   <a class="flow-step" href="/review">
-    <div class="flow-icon">🔍</div>
+    <div class="flow-icon">{{ step_icon("review") }}</div>
     <div class="flow-label">Por confirmar</div>
     <div class="flow-count">{{ review_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
   <a class="flow-step" href="/stock">
-    <div class="flow-icon">📈</div>
+    <div class="flow-icon">{{ step_icon("stock") }}</div>
     <div class="flow-label">Stock</div>
     <div class="flow-count">{{ stock_count }}</div>
   </a>
+</div>
+
+<div class="stats-row">
+  <div class="card stat-card">
+    <div class="stat-value">{{ "%.2f"|format(total_revenue) }} €</div>
+    <div class="stat-label">Receita total</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-value">{{ total_sold }}</div>
+    <div class="stat-label">Livros vendidos</div>
+  </div>
+</div>
+
+<div class="metrics-grid">
+  <div class="card">
+    <h3>Vendas por semana</h3>
+    {{ bar_chart(revenue_chart) }}
+    {% if weekly_sales %}
+    <table>
+      <tr><th>Semana</th><th>Vendas</th><th>Receita</th></tr>
+      {% for week, count, revenue in weekly_sales %}
+      <tr><td>{{ week }}</td><td>{{ count }}</td><td>{{ "%.2f"|format(revenue or 0) }} €</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>Ainda sem vendas registadas.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Livros adicionados por semana</h3>
+    {{ bar_chart(added_chart) }}
+    {% if weekly_added %}
+    <table>
+      <tr><th>Semana</th><th>Livros</th></tr>
+      {% for week, count in weekly_added %}
+      <tr><td>{{ week }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>Ainda sem livros registados.</p>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
