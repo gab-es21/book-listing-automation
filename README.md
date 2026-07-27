@@ -103,11 +103,15 @@ Default is `false` - leave it that way for real usage.
 
 ## Setup
 
-1. `pip install -r requirements.txt`
-2. `pip install -e .` - installs the `blt` package itself and registers the `blt` command (this is what makes the bare `blt ...` commands below actually work; without it there's no `blt` executable, only `python -m blt.cli ...`).
+This project uses [uv](https://docs.astral.sh/uv/) to manage the Python version, virtualenv, and dependencies - no separate `pip install`/`venv` steps needed.
+
+1. Install `uv` if you don't have it already (see the link above).
+2. `uv sync` - creates `.venv/`, installs the pinned Python version (`.python-version`), and installs every dependency (including dev tools) from `uv.lock`. This also installs the `blt` package itself in editable mode, registering the `blt` command inside that venv.
 3. Copy `.env.example` to `.env` and adjust `BOOK_PRICE_EUR` if needed.
-4. `blt initdb` - creates `blt.db` (SQLite, a plain file in the project root) with the `books` and `sales` tables. All data - every book, photo path, and sale - lives in that one file plus the `photos_raw/`/`photos_grouped/` folders, so it persists across restarts and across machine reboots; nothing here is in-memory or session-scoped.
-5. `blt review` to start the local web app (see below) - `Ctrl+C` in that terminal stops it. Safe to stop and restart anytime; it always resumes from whatever's in `blt.db`.
+4. `uv run blt initdb` - creates `blt.db` (SQLite, a plain file in the project root) with the `books` and `sales` tables. All data - every book, photo path, and sale - lives in that one file plus the `photos_raw/`/`photos_grouped/` folders, so it persists across restarts and across machine reboots; nothing here is in-memory or session-scoped.
+5. `uv run blt review` to start the local web app (see below) - `Ctrl+C` in that terminal stops it. Safe to stop and restart anytime; it always resumes from whatever's in `blt.db`.
+
+(`uv run <command>` runs inside the managed venv without needing to activate it manually; you can also `.venv\Scripts\activate` (Windows) / `source .venv/bin/activate` and drop the `uv run` prefix.)
 
 ## CLI commands
 
@@ -119,11 +123,13 @@ Default is `false` - leave it that way for real usage.
 | `blt extract [--limit N]` | run barcode+Almedina extraction on pending books missing data; unresolved ones are marked `failed` |
 | `blt review [--host] [--port]` | open the local web app - dashboard at `/`, plus `/raw`, `/sorted`, `/review`, `/stock` |
 
+(run any of these as `uv run blt ...`, or drop the `uv run` prefix once the venv is activated.)
+
 ## Testing
 
 `pytest` (unit tests use synthetic images + `tmp_path`, no real photos or Ollama needed). Runs automatically on every push/PR via GitHub Actions.
 
 ```bash
-pip install -r requirements.txt
-pytest -v
+uv sync
+uv run pytest -v
 ```

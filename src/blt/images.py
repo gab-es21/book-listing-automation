@@ -3,11 +3,11 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 try:
-    from pillow_heif import register_heif_opener, open_heif
+    from pillow_heif import open_heif, register_heif_opener
     register_heif_opener()
     _HAVE_HEIF = True
 except Exception:
-    open_heif = None  # type: ignore
+    open_heif = None
     _HAVE_HEIF = False
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}

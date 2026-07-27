@@ -1,17 +1,18 @@
 from __future__ import annotations
+
+import subprocess
 from pathlib import Path
-from typing import Iterable
-import subprocess, sys
+
 from PIL import Image, UnidentifiedImageError
 
 # Try to enable HEIC in Pillow (newer pillow-heif bundles libheif)
 _HAVE_HEIF = False
 try:
-    from pillow_heif import register_heif_opener, open_heif  # type: ignore
+    from pillow_heif import open_heif, register_heif_opener
     register_heif_opener()
     _HAVE_HEIF = True
 except Exception:
-    open_heif = None  # type: ignore
+    open_heif = None
 
 # Portable ffmpeg (auto-downloaded on first use, no system install)
 _FFMPEG_EXE: str | None = None
@@ -27,6 +28,7 @@ IMG_EXTS_HEIC = {".heic", ".heif"}
 
 def _heic_to_jpeg_pillow(src: Path, dst: Path, quality: int = 95) -> bool:
     """Try Pillow + pillow-heif."""
+    im: Image.Image
     try:
         # First try normal PIL (register_heif_opener may be enough)
         im = Image.open(src)
@@ -59,7 +61,7 @@ def _heic_to_jpeg_ffmpeg(src: Path, dst: Path, quality: int = 95) -> bool:
     try:
         ffmpeg = _get_ffmpeg_exe()
         cmd = [ffmpeg, "-y", "-i", str(src), "-frames:v", "1", "-q:v", "2", str(dst)]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.run(cmd, capture_output=True)
         return proc.returncode == 0 and dst.exists()
     except Exception:
         return False
@@ -74,8 +76,10 @@ def convert_file(src: Path, delete_src: bool = True, quality: int = 95) -> Path 
     dst = src.with_suffix(".jpg")
     if _heic_to_jpeg_pillow(src, dst, quality=quality) or _heic_to_jpeg_ffmpeg(src, dst, quality=quality):
         if delete_src:
-            try: src.unlink()
-            except Exception: pass
+            try:
+                src.unlink()
+            except Exception:
+                pass
         return dst
     return None
 
@@ -90,5 +94,6 @@ def convert_folder(folder: Path, recursive: bool = True, delete_src: bool = True
     for p in sorted(folder.glob(pattern)):
         if p.is_file() and p.suffix.lower() in IMG_EXTS_HEIC:
             out = convert_file(p, delete_src=delete_src, quality=quality)
-            if out: created.append(out)
+            if out:
+                created.append(out)
     return created
