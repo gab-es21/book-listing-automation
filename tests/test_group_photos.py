@@ -34,7 +34,7 @@ def _pixel(path: Path):
 
 def _assert_color(actual, expected, tol=15):
     """JPEG is lossy - a solid color can drift a few units per channel after one encode/decode."""
-    assert all(abs(a - e) <= tol for a, e in zip(actual, expected)), f"{actual} != {expected} (tol={tol})"
+    assert all(abs(a - e) <= tol for a, e in zip(actual, expected, strict=True)), f"{actual} != {expected} (tol={tol})"
 
 
 def test_propose_pairs_does_not_touch_the_filesystem(raw_and_grouped):

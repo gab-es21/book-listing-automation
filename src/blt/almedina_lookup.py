@@ -30,7 +30,10 @@ from bs4 import BeautifulSoup
 
 SEARCH_URL = "https://www.almedina.net/catalogsearch/result/"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "pt-PT,pt;q=0.9,en;q=0.8",
 }
@@ -47,14 +50,14 @@ def lookup_by_isbn(isbn: str) -> dict | None:
         r = requests.get(SEARCH_URL, params={"q": isbn}, headers=HEADERS, timeout=15)
         r.raise_for_status()
     except requests.RequestException as e:
-        raise AlmedinaLookupError(f"Não foi possível consultar a Almedina ({e}).")
+        raise AlmedinaLookupError(f"Não foi possível consultar a Almedina ({e}).") from e
 
     soup = BeautifulSoup(r.text, "html.parser")
 
     # An exact ISBN match redirects straight to the product page, which has
     # this structured markup; a search-results listing (no exact match)
     # doesn't carry it the same way.
-    title_el = soup.find(attrs={"itemprop": "name"})
+    title_el = soup.find(attrs={"itemprop": "name"})  # type: ignore[call-overload]
     if not title_el:
         return None
     title = title_el.get_text(strip=True)

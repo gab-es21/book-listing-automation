@@ -1,7 +1,9 @@
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import ForeignKey, String, DateTime, Float, Integer, Text, func
 
-class Base(DeclarativeBase): pass
+
+class Base(DeclarativeBase):
+    pass
 
 # status: pending (grouped, not yet reviewed/listed) -> available (listed on
 # Vinted) -> sold_out, with a side branch to failed (extraction couldn't

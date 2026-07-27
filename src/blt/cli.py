@@ -1,7 +1,9 @@
-import typer
 from pathlib import Path
-from typing import Optional
+
+import typer
 from rich import print
+
+from .config import settings
 from .db import init_db
 from .group_photos import group_last_set
 
@@ -42,17 +44,15 @@ def extract(limit: int = typer.Option(None, help="Limite de livros a processar (
 def review(host: str = "127.0.0.1", port: int = 8000):
     """Abre a página local de revisão (copy-paste para o Vinted)."""
     import uvicorn
+
     from .review_app import app as review_app
     print(f"[green]A abrir em http://{host}:{port}[/green]")
     uvicorn.run(review_app, host=host, port=port)
 
 @app.command("convert-heic")
-def convert_heic(path: str, recursive: bool = True, delete_src: Optional[bool] = None):
+def convert_heic(path: str, recursive: bool = True, delete_src: bool = not settings.DEV_MODE):
     """Convert all .heic/.heif under PATH to .jpg (deletes originals unless DEV_MODE is on)."""
-    from .config import settings
     from .heic_convert import convert_folder
-    if delete_src is None:
-        delete_src = not settings.DEV_MODE
     created = convert_folder(Path(path), recursive=recursive, delete_src=delete_src)
     print(f"[green]{len(created)} ficheiro(s) convertidos para JPEG.[/green]")
 

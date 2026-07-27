@@ -31,7 +31,7 @@ def _make_photo(folder, name, taken_at, color=(1, 0, 0)):
 
 
 def _assert_color(actual, expected, tol=20):
-    assert all(abs(a - e) <= tol for a, e in zip(actual, expected)), f"{actual} != {expected} (tol={tol})"
+    assert all(abs(a - e) <= tol for a, e in zip(actual, expected, strict=True)), f"{actual} != {expected} (tol={tol})"
 
 
 # -------- Cross-origin write protection --------
@@ -433,7 +433,7 @@ def test_dev_mode_next_cycles_to_the_next_book_via_after_cursor(monkeypatch, tem
 
 def test_dev_mode_wraps_around_after_the_last_book(monkeypatch, temp_db):
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
-    first_id = _add_book(temp_db, folder_path="book_a", title="First")
+    _add_book(temp_db, folder_path="book_a", title="First")
     last_id = _add_book(temp_db, folder_path="book_b", title="Second")
 
     r = client.get("/review", params={"after": last_id})
@@ -596,7 +596,9 @@ def test_mark_sold_records_a_sale_snapshot(temp_db):
 
 
 def test_sale_survives_book_deletion(temp_db):
-    book_id = _add_book(temp_db, folder_path="book_sale_del", status="available", quantity=1, title="Gone Later", price=7.0)
+    book_id = _add_book(
+        temp_db, folder_path="book_sale_del", status="available", quantity=1, title="Gone Later", price=7.0,
+    )
 
     client.post(f"/sold/{book_id}")  # quantity 1 -> 0, status becomes sold_out
     client.post(f"/delete/{book_id}")

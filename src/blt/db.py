@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
+
 from .config import settings
 from .models import Base, Book
 
@@ -14,7 +15,7 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 def init_db():
     Base.metadata.create_all(engine)
 
-def sync_pending_books(grouped_dir: Path) -> int:
+def sync_pending_books(grouped_dir: str | Path) -> int:
     """
     Ensure every book_NNN folder in grouped_dir has a matching Book row,
     inserting one with status="pending" for any that don't yet have one.
