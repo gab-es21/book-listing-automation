@@ -76,6 +76,16 @@ _VISIBLE_STATUSES = ("available", "sold_out")
 # touched yet, "review" is everything it has (resolved or not).
 _SORTED_FILTER = and_(Book.status == "pending", Book.title.is_(None))
 _REVIEW_FILTER = or_(Book.status == "failed", and_(Book.status == "pending", Book.title.is_not(None)))
+_STOCKED_STATUSES = ("available", "sold_out")
+
+
+def _find_isbn_duplicate(s, book: Book) -> Book | None:
+    """Another already-stocked book (available/sold_out) sharing this ISBN, if any."""
+    if not book.isbn:
+        return None
+    return s.execute(
+        select(Book).where(Book.isbn == book.isbn, Book.id != book.id, Book.status.in_(_STOCKED_STATUSES))
+    ).scalars().first()
 
 
 def _sidebar_counts(s) -> dict:
@@ -235,12 +245,15 @@ def review_form(request: Request, after: int = 0):
             book = s.execute(query.where(Book.id > after)).scalars().first()
         if book is None:
             book = s.execute(query).scalars().first()
+        duplicate_book = None
+        if book is not None and not settings.DEV_MODE:
+            duplicate_book = _find_isbn_duplicate(s, book)
         ctx = _sidebar_counts(s)
         return templates.TemplateResponse(
             request,
             "review.html",
             {**ctx, "active_step": "review", "book": book, "remaining": ctx["review_count"],
-             "is_previous": False, "dev_mode": settings.DEV_MODE},
+             "is_previous": False, "dev_mode": settings.DEV_MODE, "duplicate_book": duplicate_book},
         )
 
 
@@ -258,9 +271,25 @@ def submit_next(
         book = s.get(Book, book_id)
         if book is None:
             raise HTTPException(404)
+        book.isbn = isbn or None
+
+        existing = None if settings.DEV_MODE else _find_isbn_duplicate(s, book)
+        if existing is not None:
+            # Same ISBN already stocked - fold this pending copy into that
+            # listing (bump its quantity, refresh its fields) instead of
+            # creating a second entry for the same book.
+            existing.title = title or None
+            existing.author = author or None
+            existing.description = description or None
+            existing.price = price
+            existing.quantity = existing.quantity + quantity
+            existing.status = "available"
+            s.delete(book)
+            s.commit()
+            return RedirectResponse("/review", status_code=303)
+
         book.title = title or None
         book.author = author or None
-        book.isbn = isbn or None
         book.description = description or None
         book.price = price
         book.quantity = quantity
@@ -282,12 +311,13 @@ def previous_book(request: Request):
         ).scalars().first()
         if book is None:
             raise HTTPException(404, "No previously-reviewed book yet.")
+        duplicate_book = None if settings.DEV_MODE else _find_isbn_duplicate(s, book)
         ctx = _sidebar_counts(s)
         return templates.TemplateResponse(
             request,
             "review.html",
             {**ctx, "active_step": "review", "book": book, "remaining": None,
-             "is_previous": True, "dev_mode": settings.DEV_MODE},
+             "is_previous": True, "dev_mode": settings.DEV_MODE, "duplicate_book": duplicate_book},
         )
 
 
