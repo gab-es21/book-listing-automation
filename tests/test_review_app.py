@@ -143,8 +143,8 @@ def test_progress_header_weighs_a_leftover_photo_as_half_a_book(monkeypatch, tmp
     r = client.get("/review")
 
     # total = 0.5 + 1 = 1.5 -> raw 33.3%, review 66.7%
-    assert 'title="Imagens raw: 33.3%"' in r.text
-    assert 'title="Por confirmar: 66.7%"' in r.text
+    assert 'title="Imagens raw: 0.5 (33.3%)"' in r.text
+    assert 'title="Por confirmar: 1 (66.7%)"' in r.text
 
 
 def test_progress_header_counts_a_complete_pair_as_one_full_book(monkeypatch, tmp_path, temp_db):
@@ -160,8 +160,8 @@ def test_progress_header_counts_a_complete_pair_as_one_full_book(monkeypatch, tm
     r = client.get("/review")
 
     # total = 1 + 1 = 2 -> 50/50
-    assert 'title="Imagens raw: 50.0%"' in r.text
-    assert 'title="Por confirmar: 50.0%"' in r.text
+    assert 'title="Imagens raw: 1 (50.0%)"' in r.text
+    assert 'title="Por confirmar: 1 (50.0%)"' in r.text
 
 
 def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_path, temp_db):
@@ -172,7 +172,7 @@ def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_pa
     r = client.get("/review")
 
     assert r.status_code == 200
-    assert 'title="Imagens raw: 0.0%"' in r.text
+    assert 'title="Imagens raw: 0 (0.0%)"' in r.text
     assert '<div class="progress-ticks"' not in r.text  # no units to mark, so no tick overlay element
 
 
@@ -205,10 +205,12 @@ def test_review_status_bar_breaks_down_the_queue_by_state(temp_db):
 
     # 4 books in the review queue (the stocked one isn't part of it): 1 each
     # of red/grey/yellow/green -> 25% apiece
-    assert 'title="Sem ISBN: 25.0%"' in r.text
-    assert 'title="Não encontrado: 25.0%"' in r.text
-    assert 'title="Repetido: 25.0%"' in r.text
-    assert 'title="Pronto: 25.0%"' in r.text
+    assert 'title="Sem ISBN: 1 (25.0%)"' in r.text
+    assert 'title="Não encontrado: 1 (25.0%)"' in r.text
+    assert 'title="Repetido: 1 (25.0%)"' in r.text
+    assert 'title="Pronto: 1 (25.0%)"' in r.text
+    # 4 books in the queue -> one tick mark every 25% of the bar's width
+    assert '<div class="progress-ticks" style="background-size: 25.0% 100%;"></div>' in r.text
 
 
 def test_review_status_bar_hidden_on_the_previous_page(temp_db):
@@ -418,7 +420,7 @@ def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" in r.text
-    assert '<button type="submit" class="warning">Adicionar &rarr;</button>' in r.text
+    assert '<button type="submit" form="review-form" class="warning">Adicionar <svg' in r.text
 
 
 def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
@@ -427,7 +429,7 @@ def test_review_form_has_no_duplicate_warning_for_a_unique_isbn(temp_db):
     r = client.get("/review")
 
     assert "já está em stock" not in r.text
-    assert '<button type="submit" class="primary">Criar &rarr;</button>' in r.text
+    assert '<button type="submit" form="review-form" class="primary">Criar <svg' in r.text
 
 
 def test_dev_mode_review_form_never_shows_duplicate_warning(monkeypatch, temp_db):
@@ -620,7 +622,26 @@ def test_review_form_has_a_skip_link_pointing_at_the_current_book(temp_db):
     r = client.get("/review")
 
     assert f'action="/skip/{book_id}"' in r.text
-    assert "Passar por agora" in r.text
+    assert '<button type="submit" class="info">Passar <svg' in r.text
+
+
+def test_review_form_three_action_buttons_share_one_row_with_distinct_colors(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_action_row", title="Row", isbn="12345")
+
+    r = client.get("/review")
+
+    # all three live in the same .review-actions flex row, not split across
+    # separate rows - the primary button is pulled out of #review-form via
+    # the form="" attribute so it can sit alongside the other two. Ordered
+    # Procurar -> Passar -> Criar/Adicionar.
+    actions_start = r.text.index('<div class="review-actions">')
+    actions_end = r.text.index("</div>", actions_start)
+    actions_html = r.text[actions_start:actions_end]
+    procurar_i = actions_html.index('class="retry">Procurar <svg')
+    passar_i = actions_html.index('class="info">Passar <svg')
+    criar_i = actions_html.index('form="review-form" class="primary">Criar <svg')
+    assert procurar_i < passar_i < criar_i
+    assert f'action="/reextract/{book_id}"' in r.text
 
 
 def test_dev_mode_next_does_not_promote_saves_edits_and_stays_pending(monkeypatch, temp_db):
