@@ -126,10 +126,10 @@
 {% if not is_previous %}
 <div class="progress-block">
   <div class="review-bar">
-    <div style="width: {{ review_red_pct }}%; background: #c92a2a;" title="Sem ISBN: {{ review_red_pct }}%"></div>
-    <div style="width: {{ review_grey_pct }}%; background: var(--muted);" title="Não encontrado: {{ review_grey_pct }}%"></div>
-    <div style="width: {{ review_yellow_pct }}%; background: var(--step-stock);" title="Repetido: {{ review_yellow_pct }}%"></div>
-    <div style="width: {{ review_green_pct }}%; background: var(--green);" title="Pronto: {{ review_green_pct }}%"></div>
+    <div style="width: {{ review_red_pct }}%; background: #c92a2a;" title="Sem ISBN: {{ review_red_count }} ({{ review_red_pct }}%)"></div>
+    <div style="width: {{ review_grey_pct }}%; background: var(--muted);" title="Não encontrado: {{ review_grey_count }} ({{ review_grey_pct }}%)"></div>
+    <div style="width: {{ review_yellow_pct }}%; background: var(--step-stock);" title="Repetido: {{ review_yellow_count }} ({{ review_yellow_pct }}%)"></div>
+    <div style="width: {{ review_green_pct }}%; background: var(--green);" title="Pronto: {{ review_green_count }} ({{ review_green_pct }}%)"></div>
     {% if review_unit_pct %}<div class="progress-ticks" style="background-size: {{ review_unit_pct }}% 100%;"></div>{% endif %}
   </div>
   <div class="review-legend">

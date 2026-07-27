@@ -143,8 +143,8 @@ def test_progress_header_weighs_a_leftover_photo_as_half_a_book(monkeypatch, tmp
     r = client.get("/review")
 
     # total = 0.5 + 1 = 1.5 -> raw 33.3%, review 66.7%
-    assert 'title="Imagens raw: 33.3%"' in r.text
-    assert 'title="Por confirmar: 66.7%"' in r.text
+    assert 'title="Imagens raw: 0.5 (33.3%)"' in r.text
+    assert 'title="Por confirmar: 1 (66.7%)"' in r.text
 
 
 def test_progress_header_counts_a_complete_pair_as_one_full_book(monkeypatch, tmp_path, temp_db):
@@ -160,8 +160,8 @@ def test_progress_header_counts_a_complete_pair_as_one_full_book(monkeypatch, tm
     r = client.get("/review")
 
     # total = 1 + 1 = 2 -> 50/50
-    assert 'title="Imagens raw: 50.0%"' in r.text
-    assert 'title="Por confirmar: 50.0%"' in r.text
+    assert 'title="Imagens raw: 1 (50.0%)"' in r.text
+    assert 'title="Por confirmar: 1 (50.0%)"' in r.text
 
 
 def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_path, temp_db):
@@ -172,7 +172,7 @@ def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_pa
     r = client.get("/review")
 
     assert r.status_code == 200
-    assert 'title="Imagens raw: 0.0%"' in r.text
+    assert 'title="Imagens raw: 0 (0.0%)"' in r.text
     assert '<div class="progress-ticks"' not in r.text  # no units to mark, so no tick overlay element
 
 
@@ -205,10 +205,10 @@ def test_review_status_bar_breaks_down_the_queue_by_state(temp_db):
 
     # 4 books in the review queue (the stocked one isn't part of it): 1 each
     # of red/grey/yellow/green -> 25% apiece
-    assert 'title="Sem ISBN: 25.0%"' in r.text
-    assert 'title="Não encontrado: 25.0%"' in r.text
-    assert 'title="Repetido: 25.0%"' in r.text
-    assert 'title="Pronto: 25.0%"' in r.text
+    assert 'title="Sem ISBN: 1 (25.0%)"' in r.text
+    assert 'title="Não encontrado: 1 (25.0%)"' in r.text
+    assert 'title="Repetido: 1 (25.0%)"' in r.text
+    assert 'title="Pronto: 1 (25.0%)"' in r.text
     # 4 books in the queue -> one tick mark every 25% of the bar's width
     assert '<div class="progress-ticks" style="background-size: 25.0% 100%;"></div>' in r.text
 

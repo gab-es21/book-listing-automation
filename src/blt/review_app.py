@@ -171,6 +171,10 @@ def _sidebar_counts(s) -> dict:
         "sorted_count": sorted_count,
         "review_count": review_count,
         "stock_count": stock_count,
+        # book-equivalent count backing raw_pct (may be a half-integer, e.g.
+        # "2.5") - shown alongside the percentage on hover; formatted to drop
+        # a pointless trailing ".0" for whole numbers.
+        "raw_units_display": f"{raw_units:g}",
         "raw_pct": _pct(raw_units),
         "sorted_pct": _pct(sorted_count),
         "review_pct": _pct(review_count),
