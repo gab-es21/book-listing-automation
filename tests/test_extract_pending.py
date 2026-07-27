@@ -32,7 +32,7 @@ def test_resolved_book_gets_filled_in_and_stays_pending(monkeypatch, temp_db):
         assert book.author == "Colleen Hoover"
         assert book.isbn == "9789896689704"
         assert book.description
-        assert book.price == 7.0
+        assert book.price == 8.0
         assert book.status == "pending"
 
 

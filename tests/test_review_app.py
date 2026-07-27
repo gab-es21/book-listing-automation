@@ -12,6 +12,10 @@ from blt.review_app import app
 client = TestClient(app)
 
 
+def _boom_if_called(*args, **kwargs):
+    raise AssertionError("this should not have been called")
+
+
 def _add_book(temp_db, **kwargs):
     kwargs.setdefault("folder_path", "book_x")
     kwargs.setdefault("status", "pending")
@@ -361,6 +365,22 @@ def test_review_form_sell_title_omits_dash_when_no_author(temp_db):
     assert 'id="sell_title" value="Sempre Tu"' in r.text
 
 
+def test_review_form_shows_description_before_isbn_before_title(temp_db):
+    _add_book(temp_db, folder_path="book_order", title="Sempre Tu", author="Colleen Hoover", isbn="123")
+
+    r = client.get("/review")
+
+    assert r.text.index('id="description"') < r.text.index('id="isbn"') < r.text.index('id="title"')
+
+
+def test_review_form_defaults_price_to_8_when_unset(temp_db):
+    _add_book(temp_db, folder_path="book_no_price", status="failed", price=None)
+
+    r = client.get("/review")
+
+    assert 'id="price" name="price" type="number" step="0.01" value="8.0"' in r.text
+
+
 def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
     _add_book(
         temp_db, folder_path="book_stocked", status="available", title="Already Here",
@@ -519,6 +539,40 @@ def test_next_advances_to_the_next_pending_book(temp_db):
     assert "First" not in r.text
 
 
+def test_skip_button_shows_next_book_without_touching_the_skipped_one(temp_db):
+    first_id = _add_book(temp_db, folder_path="book_skip_a", title="First")
+    _add_book(temp_db, folder_path="book_skip_b", title="Second")
+
+    r = client.get("/review", params={"after": first_id})
+
+    assert "Second" in r.text
+    with temp_db() as s:
+        skipped = s.get(Book, first_id)
+        assert skipped.status == "pending"  # untouched - still waiting in the queue
+        assert skipped.title == "First"
+
+
+def test_skip_button_wraps_back_to_the_skipped_book_once_the_queue_cycles(temp_db):
+    first_id = _add_book(temp_db, folder_path="book_skip_c", title="First")
+    last_id = _add_book(temp_db, folder_path="book_skip_d", title="Second")
+
+    r = client.get("/review", params={"after": last_id})
+
+    assert "First" in r.text
+    with temp_db() as s:
+        assert s.get(Book, first_id).status == "pending"
+        assert s.get(Book, last_id).status == "pending"
+
+
+def test_review_form_has_a_skip_link_pointing_at_the_current_book(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_skip_link", title="Skippable")
+
+    r = client.get("/review")
+
+    assert f'<input type="hidden" name="after" value="{book_id}">' in r.text
+    assert "Passar por agora" in r.text
+
+
 def test_dev_mode_next_does_not_promote_saves_edits_and_stays_pending(monkeypatch, temp_db):
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
     book_id = _add_book(temp_db, folder_path="book_dev", title="Old")
@@ -596,6 +650,68 @@ def test_revert_sends_book_back_to_pending(temp_db):
 
     r = client.get("/review")
     assert "Oops" in r.text
+
+
+def test_reextract_resolves_and_flips_failed_to_pending(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_retry", status="failed", isbn="9789896689704")
+    monkeypatch.setattr(
+        review_app, "extract_book_fields",
+        lambda folder: {"title": "Sempre Tu", "author": "Colleen Hoover", "isbn": "9789896689704"},
+    )
+
+    client.post(f"/reextract/{book_id}")
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.title == "Sempre Tu"
+        assert book.author == "Colleen Hoover"
+        assert book.description
+        assert book.status == "pending"  # resolved now, no longer needs manual entry
+
+
+def test_reextract_keeps_failed_status_when_still_unresolved(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_retry_fail", status="failed", isbn="000")
+    monkeypatch.setattr(
+        review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": "111"},
+    )
+
+    client.post(f"/reextract/{book_id}")
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.status == "failed"
+        assert book.isbn == "111"  # updated to whatever this attempt decoded
+
+
+def test_reextract_uses_dev_cache_in_dev_mode(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    book_id = _add_book(temp_db, folder_path="book_retry_dev", status="failed", isbn="222")
+    monkeypatch.setattr(review_app, "extract_book_fields", _boom_if_called)
+    monkeypatch.setattr(
+        review_app, "_extract_with_dev_cache",
+        lambda s, folder: {"title": "Cached Title", "author": None, "isbn": "222"},
+    )
+
+    client.post(f"/reextract/{book_id}")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id).title == "Cached Title"
+
+
+def test_review_form_reextract_button_shown_only_when_isbn_present(temp_db):
+    _add_book(temp_db, folder_path="book_has_isbn", status="failed", isbn="333")
+
+    r = client.get("/review")
+
+    assert 'action="/reextract/' in r.text
+
+
+def test_review_form_reextract_button_hidden_without_isbn(temp_db):
+    _add_book(temp_db, folder_path="book_no_isbn", status="failed", isbn=None)
+
+    r = client.get("/review")
+
+    assert 'action="/reextract/' not in r.text
 
 
 # -------- Stock --------
