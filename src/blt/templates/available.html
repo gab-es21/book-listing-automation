@@ -67,8 +67,58 @@
   .pagination a { color: var(--green-dark); text-decoration: none; }
   .pagination a:hover { text-decoration: underline; }
   .pagination .spacer { flex: 1; }
+
+  .bar-header-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .tab-group { display: flex; gap: 0.4rem; }
+  .tab-btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .tab-btn.active { background: var(--green); border-color: var(--green); color: #fff; }
 {% endblock %}
 {% block content %}
+<div class="progress-block">
+  <div class="bar-header-row">
+    <h3 class="bar-title">Estado do stock</h3>
+    <div class="tab-group">
+      <button type="button" class="tab-btn active" onclick="showStockTab('status', this)">Estado</button>
+      <button type="button" class="tab-btn" onclick="showStockTab('author', this)">Autor</button>
+    </div>
+  </div>
+
+  <div id="stock-tab-status">
+    <div class="stat-bar">
+      <div style="width: {{ stock_available_pct }}%; background: var(--green);" title="Disponível: {{ stock_available_count }} ({{ stock_available_pct }}%)"></div>
+      <div style="width: {{ stock_sold_out_pct }}%; background: var(--muted);" title="Esgotado: {{ stock_sold_out_count }} ({{ stock_sold_out_pct }}%)"></div>
+      {% if stock_unit_pct %}<div class="progress-ticks" style="background-size: {{ stock_unit_pct }}% 100%;"></div>{% endif %}
+    </div>
+    <div class="stat-legend">
+      <span><i style="background: var(--green)"></i>Disponível {{ stock_available_count }} ({{ stock_available_pct }}%)</span>
+      <span><i style="background: var(--muted)"></i>Esgotado {{ stock_sold_out_count }} ({{ stock_sold_out_pct }}%)</span>
+    </div>
+  </div>
+
+  <div id="stock-tab-author" style="display: none;">
+    {% set author_colors = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#7c3aed', '#c92a2a', '#d6336c', '#0ca678', '#4c6ef5', '#82c91e'] %}
+    <div class="stat-bar">
+      {% for author in stock_authors %}
+      <div style="width: {{ author.pct }}%; background: {{ 'var(--muted)' if author.name == 'Outros' else author_colors[loop.index0] }};" title="{{ author.name }}: {{ author.count }} ({{ author.pct }}%)"></div>
+      {% endfor %}
+      {% if stock_unit_pct %}<div class="progress-ticks" style="background-size: {{ stock_unit_pct }}% 100%;"></div>{% endif %}
+    </div>
+    <div class="stat-legend">
+      {% for author in stock_authors %}
+      <span><i style="background: {{ 'var(--muted)' if author.name == 'Outros' else author_colors[loop.index0] }}"></i>{{ author.name }} {{ author.count }} ({{ author.pct }}%)</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
 <header class="page-header">
   <h1>Stock</h1>
   <p class="subtitle">{{ available_count }} disponível(is) &middot; {{ sold_out_count }} esgotado(s)</p>
@@ -189,6 +239,12 @@ function toggleEdit(id) {
 function markDirty(id) {
   document.getElementById("save-btn-" + id).disabled = false;
   document.getElementById("discard-btn-" + id).disabled = false;
+}
+function showStockTab(tab, btn) {
+  document.getElementById("stock-tab-status").style.display = tab === "status" ? "" : "none";
+  document.getElementById("stock-tab-author").style.display = tab === "author" ? "" : "none";
+  btn.parentElement.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
+  btn.classList.add("active");
 }
 </script>
 {% endblock %}
