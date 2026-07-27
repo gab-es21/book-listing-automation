@@ -1,38 +1,6 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="utf-8">
-<title>blt review - disponíveis</title>
-<style>
-  :root {
-    --green: #2f9e44;
-    --green-dark: #26833a;
-    --border: #e1e4e8;
-    --muted: #6a737d;
-    --bg: #f6f8fa;
-  }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    max-width: 900px;
-    margin: 2rem auto;
-    padding: 0 1rem;
-    background: var(--bg);
-    color: #1a1a1a;
-  }
-  .page-header { padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
-  .page-header nav a { font-size: 0.9rem; color: var(--muted); text-decoration: none; }
-  .page-header nav a:hover { color: var(--green-dark); }
-  .page-header h1 { margin: 0.5rem 0 0.25rem; font-size: 1.7rem; }
-  .subtitle { margin: 0; color: var(--muted); font-size: 0.95rem; }
-
-  .card {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1.25rem 1.5rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-
+{% extends "_base.html" %}
+{% block title %}blt - stock{% endblock %}
+{% block extra_style %}
   .search-form { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
   .search-form input[type="text"] {
     flex: 1;
@@ -41,16 +9,6 @@
     border: 1px solid var(--border);
     border-radius: 6px;
   }
-  .search-form button {
-    background: var(--green);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 0.5rem 1.1rem;
-    font-size: 0.95rem;
-    cursor: pointer;
-  }
-  .search-form button:hover { background: var(--green-dark); }
 
   .table-wrap.scroll { max-height: 60vh; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; }
@@ -76,25 +34,23 @@
   .pagination a { color: var(--green-dark); text-decoration: none; }
   .pagination a:hover { text-decoration: underline; }
   .pagination .spacer { flex: 1; }
-</style>
-</head>
-<body>
+{% endblock %}
+{% block content %}
 <header class="page-header">
-  <nav><a href="/">&larr; rever livros pendentes</a></nav>
-  <h1>Livros disponíveis</h1>
+  <h1>Stock</h1>
   <p class="subtitle">{{ available_count }} disponível(is) &middot; {{ sold_out_count }} esgotado(s)</p>
 </header>
 
 <div class="card">
-  <form method="get" action="/available" class="search-form">
+  <form method="get" action="/stock" class="search-form">
     <input type="text" name="q" value="{{ q }}" placeholder="Procurar por título, ISBN ou autor...">
     <input type="hidden" name="sort" value="{{ sort }}">
     <input type="hidden" name="dir" value="{{ dir }}">
     <input type="hidden" name="view" value="{{ view }}">
-    <button type="submit">Procurar</button>
+    <button type="submit" class="primary">Procurar</button>
   </form>
 
-  {% macro sort_link(col, label) %}{% set new_dir = 'desc' if sort == col and dir == 'asc' else 'asc' %}<a href="/available?q={{ q|urlencode }}&amp;sort={{ col }}&amp;dir={{ new_dir }}&amp;view={{ view }}">{{ label }}{% if sort == col %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a>{% endmacro %}
+  {% macro sort_link(col, label) %}{% set new_dir = 'desc' if sort == col and dir == 'asc' else 'asc' %}<a href="/stock?q={{ q|urlencode }}&amp;sort={{ col }}&amp;dir={{ new_dir }}&amp;view={{ view }}">{{ label }}{% if sort == col %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a>{% endmacro %}
 
   {% if books %}
   <div class="table-wrap {{ 'scroll' if view == 'all' else '' }}">
@@ -130,19 +86,18 @@
 
   <div class="pagination">
     {% if view == 'paginated' %}
-      {% if page > 1 %}<a href="/available?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page={{ page - 1 }}">&larr; Anterior</a>{% endif %}
+      {% if page > 1 %}<a href="/stock?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page={{ page - 1 }}">&larr; Anterior</a>{% endif %}
       <span>Página {{ page }} de {{ total_pages }}</span>
-      {% if page < total_pages %}<a href="/available?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page={{ page + 1 }}">Seguinte &rarr;</a>{% endif %}
+      {% if page < total_pages %}<a href="/stock?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page={{ page + 1 }}">Seguinte &rarr;</a>{% endif %}
       <span class="spacer"></span>
-      <a href="/available?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=all">Ver tudo (scroll)</a>
+      <a href="/stock?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=all">Ver tudo (scroll)</a>
     {% else %}
       <span class="spacer"></span>
-      <a href="/available?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page=1">Paginado (20 por página)</a>
+      <a href="/stock?q={{ q|urlencode }}&amp;sort={{ sort }}&amp;dir={{ dir }}&amp;view=paginated&amp;page=1">Paginado (20 por página)</a>
     {% endif %}
   </div>
   {% else %}
   <p>Nenhum livro encontrado.</p>
   {% endif %}
 </div>
-</body>
-</html>
+{% endblock %}

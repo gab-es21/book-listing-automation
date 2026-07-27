@@ -1,0 +1,42 @@
+{% extends "_base.html" %}
+{% block title %}blt - imagens ordenadas{% endblock %}
+{% block extra_style %}
+  .sorted-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
+  .sorted-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+    width: 200px;
+  }
+  .sorted-card .photos { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 0.5rem; }
+  .sorted-card img { max-width: 85px; max-height: 110px; border-radius: 6px; border: 1px solid var(--border); object-fit: contain; }
+  .sorted-card .folder-name { font-size: 0.85rem; color: var(--muted); }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>Imagens ordenadas</h1>
+  <p class="subtitle">{{ books|length }} livro(s) agrupado(s), ainda sem título/autor detetado</p>
+</header>
+
+{% if books %}
+<form method="post" action="/sorted/detect" style="margin-bottom: 1.5rem;">
+  <button type="submit" class="primary">Detetar livros ({{ books|length }})</button>
+</form>
+
+<div class="sorted-grid">
+  {% for book in books %}
+  <div class="sorted-card">
+    <div class="photos">
+      <img src="/photo/{{ book.id }}/cover.jpg" alt="capa">
+      <img src="/photo/{{ book.id }}/isbn.jpg" alt="ISBN">
+    </div>
+    <div class="folder-name">{{ book.folder_path.split('/')[-1].split('\\')[-1] }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><p>Nenhuma imagem ordenada à espera de deteção.</p></div>
+{% endif %}
+{% endblock %}

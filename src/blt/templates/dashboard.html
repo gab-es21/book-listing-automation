@@ -1,0 +1,56 @@
+{% extends "_base.html" %}
+{% block title %}blt{% endblock %}
+{% block extra_style %}
+  .flow { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem 1.75rem;
+    min-width: 150px;
+    text-decoration: none;
+    color: #1a1a1a;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .flow-step:hover { border-color: var(--green); }
+  .flow-icon { font-size: 2rem; }
+  .flow-label { font-size: 0.95rem; font-weight: 600; text-align: center; }
+  .flow-count { font-size: 1.6rem; font-weight: 700; color: var(--green-dark); }
+  .flow-arrow { font-size: 1.5rem; color: var(--muted); }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>blt</h1>
+  <p class="subtitle">Fluxo de listagem de livros - escolhe um passo à esquerda, ou aqui em baixo.</p>
+</header>
+
+<div class="flow">
+  <a class="flow-step" href="/raw">
+    <div class="flow-icon">📷</div>
+    <div class="flow-label">Imagens raw</div>
+    <div class="flow-count">{{ raw_count }}</div>
+  </a>
+  <div class="flow-arrow">&rarr;</div>
+  <a class="flow-step" href="/sorted">
+    <div class="flow-icon">📦</div>
+    <div class="flow-label">Imagens ordenadas</div>
+    <div class="flow-count">{{ sorted_count }}</div>
+  </a>
+  <div class="flow-arrow">&rarr;</div>
+  <a class="flow-step" href="/review">
+    <div class="flow-icon">🔍</div>
+    <div class="flow-label">Por confirmar</div>
+    <div class="flow-count">{{ review_count }}</div>
+  </a>
+  <div class="flow-arrow">&rarr;</div>
+  <a class="flow-step" href="/stock">
+    <div class="flow-icon">📈</div>
+    <div class="flow-label">Stock</div>
+    <div class="flow-count">{{ stock_count }}</div>
+  </a>
+</div>
+{% endblock %}

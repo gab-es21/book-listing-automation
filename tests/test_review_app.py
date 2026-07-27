@@ -1,4 +1,8 @@
+import os
+import time
+
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from blt import review_app
@@ -19,16 +23,183 @@ def _add_book(temp_db, **kwargs):
         return book.id
 
 
-def test_review_form_shows_nothing_left_when_no_books(temp_db):
+def _make_photo(folder, name, taken_at, color=(1, 0, 0)):
+    p = folder / name
+    Image.new("RGB", (4, 4), color=color).save(p, "JPEG")
+    os.utime(p, (taken_at, taken_at))
+    return p
+
+
+def _assert_color(actual, expected, tol=20):
+    assert all(abs(a - e) <= tol for a, e in zip(actual, expected)), f"{actual} != {expected} (tol={tol})"
+
+
+# -------- Dashboard --------
+
+def test_dashboard_shows_flow_with_all_four_steps(temp_db):
     r = client.get("/")
+
     assert r.status_code == 200
-    assert "Não há livros por rever" in r.text
+    assert "Imagens raw" in r.text
+    assert "Imagens ordenadas" in r.text
+    assert "Por confirmar" in r.text
+    assert "Stock" in r.text
+
+
+def test_sidebar_badges_reflect_current_counts(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    _make_photo(raw, "only.jpg", time.time())  # unpaired -> 1 raw image, 0 pairs
+
+    _add_book(temp_db, folder_path="a", status="pending", title=None)  # sorted: 1
+    _add_book(temp_db, folder_path="b", status="failed", isbn="1")  # review: 1
+    _add_book(temp_db, folder_path="c", status="available", title="X")  # stock: 1
+
+    r = client.get("/review")
+
+    assert 'Imagens raw</span><span class="badge">1</span>' in r.text
+    assert 'Imagens ordenadas</span><span class="badge">1</span>' in r.text
+    assert 'Livros por confirmar</span><span class="badge">1</span>' in r.text
+    assert 'Stock</span><span class="badge">1</span>' in r.text
+
+
+# -------- Raw images --------
+
+def test_raw_page_shows_proposed_pairs_and_leftover(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    base = time.time()
+    _make_photo(raw, "a.jpg", base)
+    _make_photo(raw, "b.jpg", base + 1)
+    _make_photo(raw, "c.jpg", base + 2)  # leftover, odd count
+
+    r = client.get("/raw")
+
+    assert r.status_code == 200
+    assert "1 par(es) proposto" in r.text
+    assert "1 sem par" in r.text
+
+
+def test_raw_photo_serves_file_from_raw_dir(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    (raw / "x.jpg").write_bytes(b"fake-bytes")
+
+    r = client.get("/raw-photo/x.jpg")
+
+    assert r.status_code == 200
+    assert r.content == b"fake-bytes"
+
+
+def test_raw_photo_rejects_path_traversal(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    (tmp_path / "secret.txt").write_bytes(b"nope")
+
+    r = client.get("/raw-photo/..%2Fsecret.txt")
+
+    assert r.status_code == 404
+
+
+def test_raw_confirm_all_groups_and_registers_pending(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    grouped = tmp_path / "grouped"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    monkeypatch.setattr(review_app.settings, "GROUPED_DIR", str(grouped))
+    base = time.time()
+    _make_photo(raw, "a.jpg", base)
+    _make_photo(raw, "b.jpg", base + 1)
+
+    r = client.post("/raw/confirm-all", follow_redirects=False)
+
+    assert r.status_code == 303
+    dest = grouped / "book_001"
+    assert dest.exists()
+    with temp_db() as s:
+        book = s.execute(select(Book).where(Book.folder_path == str(dest))).scalar_one()
+        assert book.status == "pending"
+
+
+def test_raw_confirm_pair_uses_proposed_order_by_default(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    grouped = tmp_path / "grouped"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    monkeypatch.setattr(review_app.settings, "GROUPED_DIR", str(grouped))
+    _make_photo(raw, "a.jpg", time.time(), color=(10, 0, 0))
+    _make_photo(raw, "b.jpg", time.time() + 1, color=(200, 0, 0))
+
+    client.post("/raw/confirm-pair", data={"photo_a": "a.jpg", "photo_b": "b.jpg"})
+
+    dest = grouped / "book_001"
+    cover = Image.open(dest / "cover.jpg").convert("RGB").getpixel((0, 0))
+    _assert_color(cover, (10, 0, 0))
+
+
+def test_raw_confirm_pair_respects_swap(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    grouped = tmp_path / "grouped"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    monkeypatch.setattr(review_app.settings, "GROUPED_DIR", str(grouped))
+    _make_photo(raw, "a.jpg", time.time(), color=(10, 0, 0))
+    _make_photo(raw, "b.jpg", time.time() + 1, color=(200, 0, 0))
+
+    client.post("/raw/confirm-pair", data={"photo_a": "a.jpg", "photo_b": "b.jpg", "swap": "1"})
+
+    dest = grouped / "book_001"
+    cover = Image.open(dest / "cover.jpg").convert("RGB").getpixel((0, 0))
+    _assert_color(cover, (200, 0, 0))  # swapped - b.jpg is now the cover
+
+
+# -------- Sorted images --------
+
+def test_sorted_page_lists_ungrouped_extracted_books(temp_db):
+    _add_book(temp_db, folder_path="book_sorted", status="pending", title=None)
+
+    r = client.get("/sorted")
+
+    assert r.status_code == 200
+    assert "1 livro" in r.text
+
+
+def test_sorted_page_excludes_already_extracted_books(temp_db):
+    _add_book(temp_db, folder_path="book_resolved", status="pending", title="Sempre Tu")
+    _add_book(temp_db, folder_path="book_failed", status="failed")
+
+    r = client.get("/sorted")
+
+    assert "0 livro" in r.text
+
+
+def test_sorted_detect_runs_extraction_and_redirects(monkeypatch, temp_db):
+    calls = []
+    monkeypatch.setattr(review_app, "extract_pending_books", lambda: calls.append(1))
+
+    r = client.post("/sorted/detect", follow_redirects=False)
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/sorted"
+    assert calls == [1]
+
+
+# -------- Detected book waiting confirmation (/review) --------
+
+def test_review_form_shows_nothing_left_when_no_books(temp_db):
+    r = client.get("/review")
+    assert r.status_code == 200
+    assert "Não há livros por confirmar" in r.text
 
 
 def test_review_form_shows_oldest_pending_book(temp_db):
     _add_book(temp_db, folder_path="book_001", title="Sempre Tu", isbn="9789896689704")
 
-    r = client.get("/")
+    r = client.get("/review")
 
     assert r.status_code == 200
     assert "Sempre Tu" in r.text
@@ -36,10 +207,18 @@ def test_review_form_shows_oldest_pending_book(temp_db):
     assert "1 livro" in r.text
 
 
+def test_sorted_book_does_not_appear_on_review_page(temp_db):
+    _add_book(temp_db, folder_path="book_not_extracted", status="pending", title=None)
+
+    r = client.get("/review")
+
+    assert "Não há livros por confirmar" in r.text
+
+
 def test_failed_book_shows_blank_title_but_keeps_isbn(temp_db):
     _add_book(temp_db, folder_path="book_002", status="failed", title=None, isbn="9789896689704")
 
-    r = client.get("/")
+    r = client.get("/review")
 
     assert r.status_code == 200
     assert "9789896689704" in r.text
@@ -61,7 +240,7 @@ def test_post_next_saves_fields_and_marks_available(temp_db):
         },
     )
 
-    assert r.status_code == 200  # followed the redirect to /
+    assert r.status_code == 200  # followed the redirect to /review
     with temp_db() as s:
         book = s.get(Book, book_id)
         assert book.title == "New Title"
@@ -79,7 +258,7 @@ def test_next_advances_to_the_next_pending_book(temp_db):
 
     client.post("/next", data={"book_id": first_id, "price": "7.0", "quantity": "1"})
 
-    r = client.get("/")
+    r = client.get("/review")
     assert "Second" in r.text
     assert "First" not in r.text
 
@@ -113,125 +292,26 @@ def test_dev_mode_wraps_around_after_the_last_book(monkeypatch, temp_db):
     first_id = _add_book(temp_db, folder_path="book_a", title="First")
     last_id = _add_book(temp_db, folder_path="book_b", title="Second")
 
-    r = client.get("/", params={"after": last_id})
+    r = client.get("/review", params={"after": last_id})
 
     assert "First" in r.text  # wrapped back to the start, nothing lost
 
 
 def test_dev_mode_shows_a_badge_on_the_review_page(monkeypatch, temp_db):
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
-    _add_book(temp_db, folder_path="book_dev")
+    _add_book(temp_db, folder_path="book_dev", title="Something")
 
-    r = client.get("/")
+    r = client.get("/review")
 
     assert "DEV MODE" in r.text
 
 
 def test_prod_mode_shows_no_dev_badge(temp_db):
-    _add_book(temp_db, folder_path="book_prod")
+    _add_book(temp_db, folder_path="book_prod", title="Something")
 
-    r = client.get("/")
+    r = client.get("/review")
 
     assert "DEV MODE" not in r.text
-
-
-def test_available_list_shows_available_books(temp_db):
-    _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", quantity=3)
-
-    r = client.get("/available")
-
-    assert r.status_code == 200
-    assert "Available Book" in r.text
-    assert ">3<" in r.text
-
-
-def test_available_search_matches_title_isbn_or_author(temp_db):
-    _add_book(temp_db, folder_path="a", status="available", title="Sempre Tu", isbn="111", author="Colleen Hoover")
-    _add_book(temp_db, folder_path="b", status="available", title="Outro Livro", isbn="9789896689704", author="Autor B")
-    _add_book(temp_db, folder_path="c", status="available", title="Terceiro", isbn="333", author="Autor C")
-
-    by_title = client.get("/available", params={"q": "Sempre"}).text
-    by_isbn = client.get("/available", params={"q": "9789896689704"}).text
-    by_author = client.get("/available", params={"q": "Autor C"}).text
-
-    assert "Sempre Tu" in by_title and "Outro Livro" not in by_title
-    assert "Outro Livro" in by_isbn and "Sempre Tu" not in by_isbn
-    assert "Terceiro" in by_author and "Sempre Tu" not in by_author
-
-
-def test_available_sort_by_price_ascending_and_descending(temp_db):
-    _add_book(temp_db, folder_path="cheap", status="available", title="Cheap", price=3.0)
-    _add_book(temp_db, folder_path="mid", status="available", title="Mid", price=7.0)
-    _add_book(temp_db, folder_path="expensive", status="available", title="Expensive", price=12.0)
-
-    asc = client.get("/available", params={"sort": "price", "dir": "asc"}).text
-    desc = client.get("/available", params={"sort": "price", "dir": "desc"}).text
-
-    assert asc.index("Cheap") < asc.index("Mid") < asc.index("Expensive")
-    assert desc.index("Expensive") < desc.index("Mid") < desc.index("Cheap")
-
-
-def test_available_default_pagination_is_20_per_page(temp_db):
-    with temp_db() as s:
-        for i in range(25):
-            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
-        s.commit()
-
-    r = client.get("/available")
-
-    assert "Página 1 de 2" in r.text
-    assert r.text.count("Marcar 1 vendido") == 20
-
-
-def test_available_view_all_shows_everything_without_pagination(temp_db):
-    with temp_db() as s:
-        for i in range(25):
-            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
-        s.commit()
-
-    r = client.get("/available", params={"view": "all"})
-
-    assert r.text.count("Marcar 1 vendido") == 25
-    assert "Página" not in r.text
-
-
-def test_mark_sold_decrements_quantity(temp_db):
-    book_id = _add_book(temp_db, folder_path="book_stock", status="available", quantity=2)
-
-    client.post(f"/sold/{book_id}")
-
-    with temp_db() as s:
-        book = s.get(Book, book_id)
-        assert book.quantity == 1
-        assert book.status == "available"
-
-
-def test_mark_sold_flips_to_sold_out_at_zero(temp_db):
-    book_id = _add_book(temp_db, folder_path="book_last", status="available", quantity=1, title="Last Copy")
-
-    client.post(f"/sold/{book_id}")
-
-    with temp_db() as s:
-        book = s.get(Book, book_id)
-        assert book.quantity == 0
-        assert book.status == "sold_out"
-
-    r = client.get("/available")
-    assert "Last Copy" in r.text  # stays visible, just marked sold out
-    assert "Esgotado" in r.text
-    assert "Marcar 1 vendido" not in r.text  # no sell button left for a sold-out book
-
-
-def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
-    _add_book(temp_db, folder_path="book_gone", status="sold_out", quantity=0, title="Gone")
-    _add_book(temp_db, folder_path="book_here", status="available", quantity=1, title="Zzz Still Here")
-
-    r = client.get("/available")
-
-    assert "Gone" in r.text
-    assert "Esgotado" in r.text
-    # sold-out sorts after available even though "Gone" < "Zzz..." alphabetically
-    assert r.text.index("Zzz Still Here") < r.text.index("Gone")
 
 
 def test_previous_returns_404_when_nothing_available_yet(temp_db):
@@ -258,9 +338,112 @@ def test_revert_sends_book_back_to_pending(temp_db):
         book = s.get(Book, book_id)
         assert book.status == "pending"
 
-    r = client.get("/")
+    r = client.get("/review")
     assert "Oops" in r.text
 
+
+# -------- Stock --------
+
+def test_stock_list_shows_available_books(temp_db):
+    _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", quantity=3)
+
+    r = client.get("/stock")
+
+    assert r.status_code == 200
+    assert "Available Book" in r.text
+    assert ">3<" in r.text
+
+
+def test_stock_search_matches_title_isbn_or_author(temp_db):
+    _add_book(temp_db, folder_path="a", status="available", title="Sempre Tu", isbn="111", author="Colleen Hoover")
+    _add_book(temp_db, folder_path="b", status="available", title="Outro Livro", isbn="9789896689704", author="Autor B")
+    _add_book(temp_db, folder_path="c", status="available", title="Terceiro", isbn="333", author="Autor C")
+
+    by_title = client.get("/stock", params={"q": "Sempre"}).text
+    by_isbn = client.get("/stock", params={"q": "9789896689704"}).text
+    by_author = client.get("/stock", params={"q": "Autor C"}).text
+
+    assert "Sempre Tu" in by_title and "Outro Livro" not in by_title
+    assert "Outro Livro" in by_isbn and "Sempre Tu" not in by_isbn
+    assert "Terceiro" in by_author and "Sempre Tu" not in by_author
+
+
+def test_stock_sort_by_price_ascending_and_descending(temp_db):
+    _add_book(temp_db, folder_path="cheap", status="available", title="Cheap", price=3.0)
+    _add_book(temp_db, folder_path="mid", status="available", title="Mid", price=7.0)
+    _add_book(temp_db, folder_path="expensive", status="available", title="Expensive", price=12.0)
+
+    asc = client.get("/stock", params={"sort": "price", "dir": "asc"}).text
+    desc = client.get("/stock", params={"sort": "price", "dir": "desc"}).text
+
+    assert asc.index("Cheap") < asc.index("Mid") < asc.index("Expensive")
+    assert desc.index("Expensive") < desc.index("Mid") < desc.index("Cheap")
+
+
+def test_stock_default_pagination_is_20_per_page(temp_db):
+    with temp_db() as s:
+        for i in range(25):
+            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
+        s.commit()
+
+    r = client.get("/stock")
+
+    assert "Página 1 de 2" in r.text
+    assert r.text.count("Marcar 1 vendido") == 20
+
+
+def test_stock_view_all_shows_everything_without_pagination(temp_db):
+    with temp_db() as s:
+        for i in range(25):
+            s.add(Book(folder_path=f"book_{i}", status="available", title=f"Title {i:02d}"))
+        s.commit()
+
+    r = client.get("/stock", params={"view": "all"})
+
+    assert r.text.count("Marcar 1 vendido") == 25
+    assert "Página" not in r.text
+
+
+def test_mark_sold_decrements_quantity(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_stock", status="available", quantity=2)
+
+    client.post(f"/sold/{book_id}")
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.quantity == 1
+        assert book.status == "available"
+
+
+def test_mark_sold_flips_to_sold_out_at_zero(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_last", status="available", quantity=1, title="Last Copy")
+
+    client.post(f"/sold/{book_id}")
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.quantity == 0
+        assert book.status == "sold_out"
+
+    r = client.get("/stock")
+    assert "Last Copy" in r.text  # stays visible, just marked sold out
+    assert "Esgotado" in r.text
+    assert "Marcar 1 vendido" not in r.text  # no sell button left for a sold-out book
+
+
+def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
+    _add_book(temp_db, folder_path="book_gone", status="sold_out", quantity=0, title="Gone")
+    _add_book(temp_db, folder_path="book_here", status="available", quantity=1, title="Zzz Still Here")
+
+    r = client.get("/stock")
+
+    assert "Gone" in r.text
+    assert "Esgotado" in r.text
+    # sold-out sorts after available even though "Gone" < "Zzz..." alphabetically
+    assert r.text.index("Zzz Still Here") < r.text.index("Gone")
+
+
+# -------- Photos --------
 
 def test_photo_rejects_unknown_filename(temp_db):
     book_id = _add_book(temp_db, folder_path="book_photo")

@@ -63,10 +63,41 @@ def _move_as_jpeg(src: Path, dest: Path, copy: bool = False):
         src.unlink()
 
 
+def propose_pairs(raw_dir: Path | None = None) -> tuple[list[tuple[Path, Path]], list[Path]]:
+    """
+    Pure preview, no filesystem/DB side effects: chronologically sorts every
+    image in raw_dir and proposes (cover, isbn) pairs the same way group_all
+    would. Returns (pairs, leftover) - leftover is any trailing unpaired
+    photo (odd count), never guessed into a pair.
+    """
+    raw = Path(raw_dir) if raw_dir is not None else Path(settings.RAW_DIR)
+    imgs = [p for p in raw.glob("*") if p.suffix.lower() in IMG_EXTS]
+    imgs.sort(key=_capture_time)
+    need = 2
+    pairs_count = len(imgs) // need
+    pairs = [(imgs[g * need], imgs[g * need + 1]) for g in range(pairs_count)]
+    leftover = imgs[pairs_count * need:]
+    return pairs, leftover
+
+
+def commit_pair(cover_src: Path, isbn_src: Path, grouped_dir: Path | None = None) -> Path:
+    """
+    Commits one (cover, isbn) pair into a new book_NNN folder - the actual
+    filesystem side effect behind a proposal from propose_pairs(). Recomputes
+    the next book index fresh each call, so pairs confirmed one at a time
+    from separate requests (the manual per-pair review flow) still number
+    correctly. Copy vs move follows DEV_MODE, same as group_all.
+    """
+    grouped = Path(grouped_dir) if grouped_dir is not None else Path(settings.GROUPED_DIR)
+    dest = _make_dest(grouped, _next_book_index(grouped))
+    _move_as_jpeg(Path(cover_src), dest / "cover.jpg", copy=settings.DEV_MODE)
+    _move_as_jpeg(Path(isbn_src), dest / "isbn.jpg", copy=settings.DEV_MODE)
+    return dest
+
+
 def group_last_set():
     """Creates a single group with the *latest* N images from RAW_DIR."""
     raw = Path(settings.RAW_DIR)
-    grouped = Path(settings.GROUPED_DIR)
     imgs = [p for p in raw.glob("*") if p.suffix.lower() in IMG_EXTS]
     if not imgs:
         rprint("[yellow]Sem imagens em photos_raw/[/yellow]")
@@ -79,9 +110,7 @@ def group_last_set():
         return None
 
     last_n = imgs[-need:]
-    dest = _make_dest(grouped, _next_book_index(grouped))
-    _move_as_jpeg(last_n[0], dest / "cover.jpg", copy=settings.DEV_MODE)
-    _move_as_jpeg(last_n[1], dest / "isbn.jpg", copy=settings.DEV_MODE)
+    dest = commit_pair(last_n[0], last_n[1])
     rprint(f"[green]Grupo criado:[/green] {dest}")
     return dest
 
@@ -101,33 +130,25 @@ def group_all(max_groups: int | None = None):
     raw = Path(settings.RAW_DIR)
     grouped = Path(settings.GROUPED_DIR)
 
-    imgs = [p for p in raw.glob("*") if p.suffix.lower() in IMG_EXTS]
-    if not imgs:
+    pairs, leftover = propose_pairs(raw)
+    total_imgs = len(pairs) * 2 + len(leftover)
+    if total_imgs == 0:
         rprint("[yellow]Sem imagens em photos_raw/[/yellow]")
         return []
-
-    imgs.sort(key=_capture_time)  # mais antiga primeiro
-    need = 2  # capa + contracapa, sempre
-    pairs_count = len(imgs) // need
-    if pairs_count == 0:
-        rprint(f"[yellow]Só há {len(imgs)} foto(s) - precisa de pelo menos {need}.[/yellow]")
+    if not pairs:
+        rprint(f"[yellow]Só há {total_imgs} foto(s) - precisa de pelo menos 2.[/yellow]")
         return []
 
-    if max_groups is not None:
-        pairs_count = min(pairs_count, max_groups)
+    if max_groups is not None and max_groups < len(pairs):
+        leftover = [img for pair in pairs[max_groups:] for img in pair] + leftover
+        pairs = pairs[:max_groups]
 
-    start_idx = _next_book_index(grouped)
     created = []
-
-    for g in range(pairs_count):
-        cover_src, isbn_src = imgs[g * need], imgs[g * need + 1]
-        dest = _make_dest(grouped, start_idx + g)
-        _move_as_jpeg(cover_src, dest / "cover.jpg", copy=settings.DEV_MODE)
-        _move_as_jpeg(isbn_src, dest / "isbn.jpg", copy=settings.DEV_MODE)
+    for cover_src, isbn_src in pairs:
+        dest = commit_pair(cover_src, isbn_src, grouped)
         created.append(dest)
         rprint(f"[green]{dest.name}[/green]: capa={cover_src.name}, isbn={isbn_src.name}")
 
-    leftover = imgs[pairs_count * need:]
     if leftover:
         rprint(
             f"[yellow]Aviso: {len(leftover)} foto(s) sem par ficaram em {raw}/ "

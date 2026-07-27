@@ -12,12 +12,12 @@ We tried (see the `feat/vinted-http-api` branch for the full trail). Vinted has 
 
 ```mermaid
 flowchart TD
-    A["📁 photos_raw/\n(dump all photos, mixed order)"] -->|"blt group-all"| B["Sort chronologically\n(EXIF DateTimeOriginal, else file mtime)"]
-    B --> C["Pair consecutively\n1st = cover, 2nd = ISBN close-up"]
+    A["📁 photos_raw/\n(dump all photos, mixed order)"] -->|"blt group-all, or\nconfirm via /raw"| B["Sort chronologically\n(EXIF DateTimeOriginal, else file mtime)"]
+    B --> C["Propose pairs:\n1st = cover, 2nd = ISBN close-up\n(/raw lets you swap before confirming)"]
     C --> D["📁 photos_grouped/book_NNN/\ncover.jpg + isbn.jpg"]
     D --> E["DB: insert Book row\nstatus = pending"]
 
-    E --> F["Decode ISBN barcode\n(pyzbar - deterministic)"]
+    E --> F["Decode ISBN barcode\n(pyzbar - deterministic)\nblt extract, or /sorted Detetar"]
     F -->|"barcode found"| G["Look up ISBN on Almedina\n(PT bookstore site search)"]
     G -->|"found"| H1["title/author = lookup result"]
     G -->|"not found"| Z["DB: status = failed\n(ISBN kept if we have one -\nfill in title/author by hand)"]
@@ -26,11 +26,11 @@ flowchart TD
     H1 --> I["Compose PT description\n+ suggested price"]
     I --> J["DB: save fields\n(still status = pending)"]
 
-    J --> K["blt review\nlocal FastAPI page"]
+    J --> K["/review\nlocal FastAPI page"]
     Z --> K
     K --> L["You: copy fields,\ncreate the listing on\nVinted by hand"]
-    L --> M["Click Next →\nDB: status = available"]
-    M --> N["blt review /available\nMark 1 sold, per copy"]
+    L --> M["Click Próximo →\nDB: status = available"]
+    M --> N["/stock\nMark 1 sold, per copy"]
     N -->|"quantity > 0"| N
     N -->|"quantity = 0"| O["DB: status = sold_out"]
 
@@ -76,13 +76,14 @@ Google Books was tried first and dropped: its anonymous tier's daily quota was e
 
 Almedina doesn't carry every book, and not every barcode photo decodes cleanly (glare, blur, a bent spine). Either case leaves a book at `status = failed` instead of a guessed title/author. This is expected, not a bug — the review step (#7) will surface these separately so you can type in the missing fields by hand instead of trusting an unreliable guess.
 
-## Local review page
+## Local web app
 
-`blt review` starts a small FastAPI app bound to `localhost` only:
+`blt review` starts a small FastAPI app bound to `localhost` only. A persistent left sidebar covers the whole flow as four steps, each badge showing a live count; the landing page (`/`) is a dashboard showing the same four steps as a flow diagram.
 
-- `/` shows the oldest book still `pending` or `failed`, one at a time, with both photos inline and an editable copy-paste form ordered the way you actually fill Vinted's own form: título, autor, descrição, ISBN, preço, then quantidade (our own field, not Vinted's). `failed` books get the same form with blank título/autor for manual entry. Every field has a one-click **Copiar** button next to it. Clicking **Próximo** saves your edits and marks the book `available` - it means "I already created the real Vinted listing."
-- `/previous` shows the most-recently-reviewed book as a safety net, with a way to send it back to `pending` if you catch a mistake.
-- `/available` lists every listed book - searchable by título/ISBN/autor, sortable by any column, paginated 20-per-page by default (or "ver tudo" for everything in one scrollable table) - each with its remaining `quantity` and a **Marcar 1 vendido** button. `quantity` isn't a Vinted field (each physical copy still needs its own separate listing there), it's this tool's own stock counter: decrementing it flips the book to `status = sold_out` once it hits zero. Sold-out books stay visible (styled distinctly, sorted to the bottom of the list, no button) rather than disappearing - useful for a quick sales history at a glance.
+- **Imagens raw** (`/raw`) - every photo still in `photos_raw/`, paired the same way `group-all` would, with a cover/ISBN label under each photo so you can check the proposal before committing to anything. **Ordenar como sugerido** confirms the whole batch at once; each pair also has its own confirm button plus a **Trocar capa/ISBN** toggle, in case the chronological guess picked the wrong photo first. An odd unpaired photo is shown separately, waiting for its match - never guessed into a pair.
+- **Imagens ordenadas** (`/sorted`) - grouped `book_NNN` folders that extraction hasn't touched yet (a freshly-grouped book is `status="pending"` with `title` still empty - the same shape extraction later fills in or fails, so no new column was needed to track this). **Detetar livros** runs barcode+Almedina extraction over all of them at once (same as `blt extract`).
+- **Livros por confirmar** (`/review`) - the original review page: oldest resolved-or-failed book, one at a time, both photos inline, editable copy-paste form ordered the way you actually fill Vinted's own form: título, autor, descrição, ISBN, preço, then quantidade (our own field, not Vinted's). `failed` books get the same form with blank título/autor for manual entry. Every field has a one-click **Copiar** button. **Próximo** saves your edits and marks the book `available` - it means "I already created the real Vinted listing." `/previous` is a safety net to recheck the last-reviewed book, with a way to send it back to `pending` if you catch a mistake.
+- **Stock** (`/stock`) - every listed book, searchable by título/ISBN/autor, sortable by any column, paginated 20-per-page by default (or "ver tudo" for everything in one scrollable table), each with its remaining `quantity` and a **Marcar 1 vendido** button. `quantity` isn't a Vinted field (each physical copy still needs its own separate listing there), it's this tool's own stock counter: decrementing it flips the book to `status = sold_out` once it hits zero. Sold-out books stay visible (styled distinctly, sorted to the bottom of the list, no button) rather than disappearing - useful for a quick sales history at a glance.
 
 ## Development mode
 
@@ -91,7 +92,7 @@ Almedina doesn't carry every book, and not every barcode photo decodes cleanly (
 - **Photo intake** (`blt convert-heic`, `blt group-all`) copies instead of moving/deleting - `photos_raw/` always keeps its originals.
 - **`blt group-all`** resets first: it clears out any existing `pending`/`failed` book folders + DB rows before regrouping fresh from the same raw photos, so you always get the same small batch back instead of piling up `book_004`, `book_005`, ... on every run. It **never touches `available`/`sold_out` rows** - real listing/sale history survives regardless of `DEV_MODE`.
 - **`blt extract`** reuses any title/author it's already resolved for that exact ISBN before (from any earlier real lookup) instead of hitting Almedina again - only a genuinely new ISBN triggers a real (still paced) lookup.
-- **The review page** (`/`) never promotes a book to `available` on **Next** - it saves your edits and cycles to the next pending/failed book by id (wrapping back to the first once you reach the end), so the queue never empties. A "DEV MODE" badge on the page makes this obvious at a glance.
+- **The review page** (`/review`) never promotes a book to `available` on **Próximo** - it saves your edits and cycles to the next pending/failed book by id (wrapping back to the first once you reach the end), so the queue never empties. A "DEV MODE" badge on the page makes this obvious at a glance.
 
 Default is `false` - leave it that way for real usage.
 
@@ -109,7 +110,7 @@ Default is `false` - leave it that way for real usage.
 | `blt group-all` | sort+pair everything in `photos_raw/` into `photos_grouped/book_NNN/` |
 | `blt convert-heic PATH` | convert HEIC/HEIF photos to JPEG in place |
 | `blt extract [--limit N]` | run barcode+Almedina extraction on pending books missing data; unresolved ones are marked `failed` |
-| `blt review [--host] [--port]` | open the local review page (`/` to review pending/failed books, `/available` to track sales) |
+| `blt review [--host] [--port]` | open the local web app - dashboard at `/`, plus `/raw`, `/sorted`, `/review`, `/stock` |
 
 ## Testing
 

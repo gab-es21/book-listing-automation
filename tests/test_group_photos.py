@@ -37,6 +37,49 @@ def _assert_color(actual, expected, tol=15):
     assert all(abs(a - e) <= tol for a, e in zip(actual, expected)), f"{actual} != {expected} (tol={tol})"
 
 
+def test_propose_pairs_does_not_touch_the_filesystem(raw_and_grouped):
+    raw, grouped = raw_and_grouped
+    base = time.time()
+    _make_photo(raw, "a.jpg", base, (1, 0, 0))
+    _make_photo(raw, "b.jpg", base + 1, (2, 0, 0))
+    _make_photo(raw, "c.jpg", base + 2, (3, 0, 0))  # odd leftover
+
+    pairs, leftover = gp.propose_pairs(raw)
+
+    assert len(pairs) == 1
+    assert pairs[0][0].name == "a.jpg" and pairs[0][1].name == "b.jpg"
+    assert [p.name for p in leftover] == ["c.jpg"]
+    # nothing was moved/deleted - it's a pure preview
+    assert {p.name for p in raw.iterdir()} == {"a.jpg", "b.jpg", "c.jpg"}
+    assert not grouped.exists()
+
+
+def test_commit_pair_moves_files_into_a_fresh_book_folder(raw_and_grouped):
+    raw, grouped = raw_and_grouped
+    base = time.time()
+    cover = _make_photo(raw, "a.jpg", base, (1, 0, 0))
+    isbn = _make_photo(raw, "b.jpg", base + 1, (2, 0, 0))
+
+    dest = gp.commit_pair(cover, isbn, grouped)
+
+    assert dest.name == "book_001"
+    assert {p.name for p in dest.iterdir()} == {"cover.jpg", "isbn.jpg"}
+    assert not cover.exists() and not isbn.exists()  # moved, not copied (DEV_MODE off)
+
+
+def test_commit_pair_numbers_correctly_across_separate_calls(raw_and_grouped):
+    """Simulates confirming pairs one at a time from separate requests, not a single loop."""
+    raw, grouped = raw_and_grouped
+    base = time.time()
+    c1, i1 = _make_photo(raw, "a.jpg", base, (1, 0, 0)), _make_photo(raw, "b.jpg", base + 1, (2, 0, 0))
+    c2, i2 = _make_photo(raw, "c.jpg", base + 2, (3, 0, 0)), _make_photo(raw, "d.jpg", base + 3, (4, 0, 0))
+
+    first = gp.commit_pair(c1, i1, grouped)
+    second = gp.commit_pair(c2, i2, grouped)
+
+    assert [first.name, second.name] == ["book_001", "book_002"]
+
+
 def test_pairs_by_capture_time_regardless_of_filename(raw_and_grouped):
     raw, grouped = raw_and_grouped
     base = time.time()

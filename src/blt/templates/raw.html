@@ -1,0 +1,91 @@
+{% extends "_base.html" %}
+{% block title %}blt - imagens raw{% endblock %}
+{% block extra_style %}
+  .pair-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .pair-photos { display: flex; gap: 1rem; margin-bottom: 0.75rem; }
+  .pair-photo { text-align: center; }
+  .pair-photo img {
+    max-width: 180px;
+    max-height: 220px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    object-fit: contain;
+  }
+  .pair-role { margin-top: 0.4rem; font-weight: 600; font-size: 0.85rem; color: var(--green-dark); }
+  .pair-form { display: flex; align-items: center; gap: 1rem; }
+  .swap-toggle { font-size: 0.9rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+  .leftover-card {
+    background: #fff8f0;
+    border: 1px dashed #e8a83b;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+  .leftover-card img { max-width: 180px; max-height: 220px; border-radius: 8px; }
+  .leftover-note { color: #b06a00; font-size: 0.9rem; margin-top: 0.5rem; }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>Imagens raw</h1>
+  <p class="subtitle">{{ pairs|length }} par(es) proposto(s){% if leftover %} &middot; {{ leftover|length }} sem par{% endif %}</p>
+</header>
+
+{% if pairs %}
+<form method="post" action="/raw/confirm-all" style="margin-bottom: 1.5rem;">
+  <button type="submit" class="primary">Ordenar como sugerido ({{ pairs|length }} par(es))</button>
+</form>
+
+{% for cover, isbn in pairs %}
+<div class="pair-card">
+  <div class="pair-photos">
+    <div class="pair-photo">
+      <img src="/raw-photo/{{ cover.name }}" alt="foto 1">
+      <div class="pair-role" id="role-{{ loop.index }}-a">Capa</div>
+    </div>
+    <div class="pair-photo">
+      <img src="/raw-photo/{{ isbn.name }}" alt="foto 2">
+      <div class="pair-role" id="role-{{ loop.index }}-b">ISBN</div>
+    </div>
+  </div>
+  <form method="post" action="/raw/confirm-pair" class="pair-form">
+    <input type="hidden" name="photo_a" value="{{ cover.name }}">
+    <input type="hidden" name="photo_b" value="{{ isbn.name }}">
+    <label class="swap-toggle">
+      <input type="checkbox" name="swap" value="1" onchange="toggleRoles({{ loop.index }})">
+      Trocar capa / ISBN
+    </label>
+    <button type="submit" class="secondary">Confirmar este par</button>
+  </form>
+</div>
+{% endfor %}
+{% else %}
+<div class="card"><p>Sem pares completos em <code>photos_raw/</code> ainda.</p></div>
+{% endif %}
+
+{% if leftover %}
+<h3>Sem par ainda</h3>
+{% for photo in leftover %}
+<div class="leftover-card">
+  <img src="/raw-photo/{{ photo.name }}" alt="foto sem par">
+  <p class="leftover-note">À espera do par - tira mais uma foto para completar.</p>
+</div>
+{% endfor %}
+{% endif %}
+
+<script>
+function toggleRoles(i) {
+  const a = document.getElementById(`role-${i}-a`);
+  const b = document.getElementById(`role-${i}-b`);
+  const tmp = a.textContent;
+  a.textContent = b.textContent;
+  b.textContent = tmp;
+}
+</script>
+{% endblock %}

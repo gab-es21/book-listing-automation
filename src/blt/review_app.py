@@ -1,24 +1,25 @@
 """
-Local-only FastAPI review page: one pending/failed book at a time, with
-copy-paste-ready fields, plus a lightweight view for tracking sales of
-already-listed books. Nothing here talks to Vinted - you paste the fields
-yourself and click Next once the real listing exists.
+Local-only FastAPI app covering the whole manual-assist flow as four steps,
+always reachable from a persistent sidebar: raw images -> sorted images ->
+detected book waiting confirmation -> stock. Nothing here talks to Vinted -
+you paste the fields yourself and click Next once the real listing exists.
 """
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 
-from . import db
+from . import db, group_photos
 from .config import settings
+from .extract import extract_pending_books
+from .images import IMG_EXTS
 from .models import Book
 
 app = FastAPI(title="blt review")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-_UNREVIEWED = ("pending", "failed")
 _PHOTO_NAMES = ("cover.jpg", "isbn.jpg")
 _SORTABLE_COLUMNS = {
     "title": Book.title,
@@ -30,26 +31,115 @@ _SORTABLE_COLUMNS = {
 _PER_PAGE = 20
 _VISIBLE_STATUSES = ("available", "sold_out")
 
+# A freshly-grouped book is status="pending" with title still NULL - the
+# exact same shape extraction later fills in (still pending, title set) or
+# fails out of (status="failed"). So the two states below partition cleanly
+# without needing a new column: "sorted" is everything extraction hasn't
+# touched yet, "review" is everything it has (resolved or not).
+_SORTED_FILTER = and_(Book.status == "pending", Book.title.is_(None))
+_REVIEW_FILTER = or_(Book.status == "failed", and_(Book.status == "pending", Book.title.is_not(None)))
+
+
+def _sidebar_counts(s) -> dict:
+    raw_dir = Path(settings.RAW_DIR)
+    raw_count = len([p for p in raw_dir.glob("*") if p.suffix.lower() in IMG_EXTS]) if raw_dir.exists() else 0
+    sorted_count = s.execute(select(func.count()).select_from(Book).where(_SORTED_FILTER)).scalar_one()
+    review_count = s.execute(select(func.count()).select_from(Book).where(_REVIEW_FILTER)).scalar_one()
+    stock_count = s.execute(
+        select(func.count()).select_from(Book).where(Book.status == "available")
+    ).scalar_one()
+    return {
+        "raw_count": raw_count,
+        "sorted_count": sorted_count,
+        "review_count": review_count,
+        "stock_count": stock_count,
+    }
+
 
 @app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request):
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        return templates.TemplateResponse(request, "dashboard.html", {**ctx, "active_step": None})
+
+
+# -------- Raw images --------
+
+@app.get("/raw", response_class=HTMLResponse)
+def raw_images(request: Request):
+    pairs, leftover = group_photos.propose_pairs()
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        return templates.TemplateResponse(
+            request, "raw.html", {**ctx, "active_step": "raw", "pairs": pairs, "leftover": leftover}
+        )
+
+
+@app.get("/raw-photo/{filename}")
+def raw_photo(filename: str):
+    path = Path(settings.RAW_DIR) / Path(filename).name
+    if not path.exists() or path.suffix.lower() not in IMG_EXTS:
+        raise HTTPException(404)
+    return FileResponse(path)
+
+
+@app.post("/raw/confirm-all")
+def confirm_all_pairs():
+    group_photos.group_all()
+    db.sync_pending_books(settings.GROUPED_DIR)
+    return RedirectResponse("/raw", status_code=303)
+
+
+@app.post("/raw/confirm-pair")
+def confirm_one_pair(photo_a: str = Form(...), photo_b: str = Form(...), swap: str = Form("")):
+    raw_dir = Path(settings.RAW_DIR)
+    a, b = raw_dir / Path(photo_a).name, raw_dir / Path(photo_b).name
+    cover, isbn = (b, a) if swap else (a, b)
+    if not cover.exists() or not isbn.exists():
+        raise HTTPException(404, "Uma das fotos já não está em photos_raw/.")
+    group_photos.commit_pair(cover, isbn)
+    db.sync_pending_books(settings.GROUPED_DIR)
+    return RedirectResponse("/raw", status_code=303)
+
+
+# -------- Sorted images --------
+
+@app.get("/sorted", response_class=HTMLResponse)
+def sorted_images(request: Request):
+    with db.SessionLocal() as s:
+        books = s.execute(select(Book).where(_SORTED_FILTER).order_by(Book.id)).scalars().all()
+        ctx = _sidebar_counts(s)
+        return templates.TemplateResponse(
+            request, "sorted.html", {**ctx, "active_step": "sorted", "books": books}
+        )
+
+
+@app.post("/sorted/detect")
+def detect_books():
+    extract_pending_books()
+    return RedirectResponse("/sorted", status_code=303)
+
+
+# -------- Detected book waiting confirmation --------
+
+@app.get("/review", response_class=HTMLResponse)
 def review_form(request: Request, after: int = 0):
     with db.SessionLocal() as s:
-        query = select(Book).where(Book.status.in_(_UNREVIEWED)).order_by(Book.id)
+        query = select(Book).where(_REVIEW_FILTER).order_by(Book.id)
         book = None
         if settings.DEV_MODE and after:
-            # cyclic cursor: next pending/failed book after the last one shown,
-            # wrapping back to the first once we reach the end - since DEV_MODE
-            # never promotes anything to available, nothing is ever consumed.
+            # cyclic cursor: next unresolved/failed book after the last one
+            # shown, wrapping back to the first - DEV_MODE never promotes
+            # anything to available, so nothing is ever consumed.
             book = s.execute(query.where(Book.id > after)).scalars().first()
         if book is None:
             book = s.execute(query).scalars().first()
-        remaining = s.execute(
-            select(func.count()).select_from(Book).where(Book.status.in_(_UNREVIEWED))
-        ).scalar_one()
+        ctx = _sidebar_counts(s)
         return templates.TemplateResponse(
             request,
             "review.html",
-            {"book": book, "remaining": remaining, "is_previous": False, "dev_mode": settings.DEV_MODE},
+            {**ctx, "active_step": "review", "book": book, "remaining": ctx["review_count"],
+             "is_previous": False, "dev_mode": settings.DEV_MODE},
         )
 
 
@@ -77,8 +167,8 @@ def submit_next(
             book.status = "available"
         s.commit()
     if settings.DEV_MODE:
-        return RedirectResponse(f"/?after={book_id}", status_code=303)
-    return RedirectResponse("/", status_code=303)
+        return RedirectResponse(f"/review?after={book_id}", status_code=303)
+    return RedirectResponse("/review", status_code=303)
 
 
 @app.get("/previous", response_class=HTMLResponse)
@@ -91,10 +181,12 @@ def previous_book(request: Request):
         ).scalars().first()
         if book is None:
             raise HTTPException(404, "No previously-reviewed book yet.")
+        ctx = _sidebar_counts(s)
         return templates.TemplateResponse(
             request,
             "review.html",
-            {"book": book, "remaining": None, "is_previous": True, "dev_mode": settings.DEV_MODE},
+            {**ctx, "active_step": "review", "book": book, "remaining": None,
+             "is_previous": True, "dev_mode": settings.DEV_MODE},
         )
 
 
@@ -106,11 +198,13 @@ def revert_to_pending(book_id: int):
             raise HTTPException(404)
         book.status = "pending"
         s.commit()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/review", status_code=303)
 
 
-@app.get("/available", response_class=HTMLResponse)
-def available_list(
+# -------- Stock --------
+
+@app.get("/stock", response_class=HTMLResponse)
+def stock_list(
     request: Request,
     q: str = "",
     sort: str = "title",
@@ -148,7 +242,10 @@ def available_list(
             page = min(max(page, 1), total_pages)
             books = s.execute(ordered.limit(_PER_PAGE).offset((page - 1) * _PER_PAGE)).scalars().all()
 
+        ctx = _sidebar_counts(s)
         return templates.TemplateResponse(request, "available.html", {
+            **ctx,
+            "active_step": "stock",
             "books": books,
             "q": q,
             "sort": sort,
@@ -172,7 +269,7 @@ def mark_one_sold(book_id: int):
         if book.quantity == 0:
             book.status = "sold_out"
         s.commit()
-    return RedirectResponse("/available", status_code=303)
+    return RedirectResponse("/stock", status_code=303)
 
 
 @app.get("/photo/{book_id}/{name}")
