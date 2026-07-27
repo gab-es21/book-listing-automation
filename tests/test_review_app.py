@@ -94,6 +94,20 @@ def test_raw_photo_serves_file_from_raw_dir(monkeypatch, tmp_path, temp_db):
     assert r.content == b"fake-bytes"
 
 
+def test_raw_photo_converts_heic_to_jpeg_for_display(monkeypatch, tmp_path, temp_db):
+    """Phones shoot HEIC, but no desktop browser can render it in <img> - must convert for display."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    Image.new("RGB", (8, 8), color=(200, 0, 0)).save(raw / "x.heic", format="HEIF")
+
+    r = client.get("/raw-photo/x.heic")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.content[:2] == b"\xff\xd8"  # JPEG magic bytes, not HEIC's
+
+
 def test_raw_photo_rejects_path_traversal(monkeypatch, tmp_path, temp_db):
     raw = tmp_path / "raw"
     raw.mkdir()

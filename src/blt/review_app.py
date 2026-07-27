@@ -4,18 +4,34 @@ always reachable from a persistent sidebar: raw images -> sorted images ->
 detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, case, func, or_, select
 
 from . import db, group_photos
 from .config import settings
 from .extract import extract_pending_books
-from .images import IMG_EXTS
+from .images import IMG_EXTS, load_image_any
 from .models import Book
+
+_HEIC_EXTS = {".heic", ".heif"}
+
+
+def _serve_image(path: Path):
+    """
+    HEIC/HEIF is what phones actually produce, but no desktop browser can
+    render it in an <img> tag - convert to JPEG on the fly for display only,
+    the file on disk is never touched.
+    """
+    if path.suffix.lower() in _HEIC_EXTS:
+        buf = BytesIO()
+        load_image_any(path).convert("RGB").save(buf, "JPEG", quality=90)
+        return Response(content=buf.getvalue(), media_type="image/jpeg")
+    return FileResponse(path)
 
 app = FastAPI(title="blt review")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -80,7 +96,7 @@ def raw_photo(filename: str):
     path = Path(settings.RAW_DIR) / Path(filename).name
     if not path.exists() or path.suffix.lower() not in IMG_EXTS:
         raise HTTPException(404)
-    return FileResponse(path)
+    return _serve_image(path)
 
 
 @app.post("/raw/confirm-all")
