@@ -6,6 +6,7 @@ you paste the fields yourself and click Next once the real listing exists.
 """
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
@@ -19,6 +20,7 @@ from .images import IMG_EXTS, load_image_any
 from .models import Book, Sale
 
 _HEIC_EXTS = {".heic", ".heif"}
+_SAFE_ORIGIN_HOSTS = {"localhost", "127.0.0.1"}
 
 
 def _serve_image(path: Path):
@@ -35,6 +37,24 @@ def _serve_image(path: Path):
 
 app = FastAPI(title="blt review")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+@app.middleware("http")
+async def reject_cross_origin_writes(request: Request, call_next):
+    """
+    This app has no auth by design (single-user localhost tool), so a
+    state-changing request is only as trustworthy as knowing it actually
+    came from this app's own pages. Modern browsers attach Origin to every
+    POST, cross-origin or not, so a malicious site's hidden form targeting
+    this port would show up here with a foreign Origin - reject it. A
+    missing Origin/Referer (curl, scripts, the test suite) is let through:
+    it means the request isn't a browser navigation in the first place.
+    """
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        source = request.headers.get("origin") or request.headers.get("referer")
+        if source and urlparse(source).hostname not in _SAFE_ORIGIN_HOSTS:
+            return Response("Cross-origin request rejected.", status_code=403)
+    return await call_next(request)
 
 _PHOTO_NAMES = ("cover.jpg", "isbn.jpg")
 _SORTABLE_COLUMNS = {

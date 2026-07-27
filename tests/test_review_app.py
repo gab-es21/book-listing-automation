@@ -34,6 +34,54 @@ def _assert_color(actual, expected, tol=20):
     assert all(abs(a - e) <= tol for a, e in zip(actual, expected)), f"{actual} != {expected} (tol={tol})"
 
 
+# -------- Cross-origin write protection --------
+
+def test_foreign_origin_is_rejected_on_a_write(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_csrf", status="available", quantity=1)
+
+    r = client.post(f"/sold/{book_id}", headers={"Origin": "https://evil.example.com"})
+
+    assert r.status_code == 403
+    with temp_db() as s:
+        assert s.get(Book, book_id).quantity == 1  # nothing happened
+
+
+def test_foreign_referer_is_rejected_when_no_origin_sent(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_csrf2", status="available", quantity=1)
+
+    r = client.post(f"/sold/{book_id}", headers={"Referer": "https://evil.example.com/attack.html"})
+
+    assert r.status_code == 403
+    with temp_db() as s:
+        assert s.get(Book, book_id).quantity == 1
+
+
+def test_matching_localhost_origin_is_allowed(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_csrf3", status="available", quantity=1)
+
+    r = client.post(f"/sold/{book_id}", headers={"Origin": "http://127.0.0.1:8000"})
+
+    assert r.status_code in (200, 303)
+    with temp_db() as s:
+        assert s.get(Book, book_id).quantity == 0
+
+
+def test_missing_origin_and_referer_is_allowed(temp_db):
+    """A non-browser client (curl, scripts) sends neither header - not the attack this guards against."""
+    book_id = _add_book(temp_db, folder_path="book_csrf4", status="available", quantity=1)
+
+    r = client.post(f"/sold/{book_id}")
+
+    assert r.status_code in (200, 303)
+    with temp_db() as s:
+        assert s.get(Book, book_id).quantity == 0
+
+
+def test_get_requests_are_never_blocked_by_origin_check(temp_db):
+    r = client.get("/stock", headers={"Origin": "https://evil.example.com"})
+    assert r.status_code == 200
+
+
 # -------- Dashboard --------
 
 def test_dashboard_shows_flow_with_all_four_steps(temp_db):
