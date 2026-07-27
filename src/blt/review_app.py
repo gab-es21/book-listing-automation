@@ -16,8 +16,9 @@ from sqlalchemy import and_, case, func, or_, select
 
 from . import db, group_photos
 from .config import settings
-from .extract import extract_pending_books
+from .extract import _extract_with_dev_cache, extract_book_fields, extract_pending_books
 from .images import IMG_EXTS, load_image_any
+from .listing import compose_listing
 from .models import Book, Sale
 
 _HEIC_EXTS = {".heic", ".heif"}
@@ -238,10 +239,13 @@ def review_form(request: Request, after: int = 0):
     with db.SessionLocal() as s:
         query = select(Book).where(_REVIEW_FILTER).order_by(Book.id)
         book = None
-        if settings.DEV_MODE and after:
+        if after:
             # cyclic cursor: next unresolved/failed book after the last one
-            # shown, wrapping back to the first - DEV_MODE never promotes
-            # anything to available, so nothing is ever consumed.
+            # shown, wrapping back to the first. Used by the "Passar por
+            # agora" skip button (leaves the book untouched, just deprioritized
+            # until the rest of the queue cycles back to it) and, in
+            # DEV_MODE, by every Próximo click too, since DEV_MODE never
+            # promotes anything to available so nothing is ever consumed.
             book = s.execute(query.where(Book.id > after)).scalars().first()
         if book is None:
             book = s.execute(query).scalars().first()
@@ -298,6 +302,33 @@ def submit_next(
         s.commit()
     if settings.DEV_MODE:
         return RedirectResponse(f"/review?after={book_id}", status_code=303)
+    return RedirectResponse("/review", status_code=303)
+
+
+@app.post("/reextract/{book_id}")
+def reextract_book(book_id: int):
+    """Re-runs barcode+Almedina extraction for one book - for when a previous
+    attempt decoded the wrong barcode or hit a transient Almedina failure."""
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        if settings.DEV_MODE:
+            fields = _extract_with_dev_cache(s, Path(book.folder_path))
+        else:
+            fields = extract_book_fields(Path(book.folder_path))
+        if fields["title"]:
+            listing = compose_listing(fields)
+            book.title = listing["title"]
+            book.author = listing["author"]
+            book.isbn = listing["isbn"]
+            book.description = listing["description"]
+            book.price = listing["price"]
+            book.status = "pending"
+        else:
+            book.isbn = fields["isbn"]
+            book.status = "failed"
+        s.commit()
     return RedirectResponse("/review", status_code=303)
 
 

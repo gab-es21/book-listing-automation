@@ -37,6 +37,7 @@
   button.copy:hover { border-color: var(--green); color: var(--green-dark); }
 
   .actions { margin-top: 1.75rem; display: flex; justify-content: flex-end; }
+  .secondary-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
   .revert-actions { margin-top: 0.75rem; display: flex; justify-content: flex-end; }
   .revert-actions button.secondary { color: #c92a2a; border-color: #c92a2a; }
 
@@ -112,22 +113,6 @@
     </div>
 
     <div class="field">
-      <label for="title">Título</label>
-      <div class="field-row">
-        <input id="title" name="title" value="{{ book.title or '' }}">
-        <button type="button" class="copy" onclick="copyField('title', this)">Copiar</button>
-      </div>
-    </div>
-
-    <div class="field">
-      <label for="author">Autor</label>
-      <div class="field-row">
-        <input id="author" name="author" value="{{ book.author or '' }}">
-        <button type="button" class="copy" onclick="copyField('author', this)">Copiar</button>
-      </div>
-    </div>
-
-    <div class="field">
       <label for="description">Descrição</label>
       <div class="field-row">
         <textarea id="description" name="description">{{ book.description or '' }}</textarea>
@@ -144,9 +129,25 @@
     </div>
 
     <div class="field">
+      <label for="title">Título</label>
+      <div class="field-row">
+        <input id="title" name="title" value="{{ book.title or '' }}">
+        <button type="button" class="copy" onclick="copyField('title', this)">Copiar</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="author">Autor</label>
+      <div class="field-row">
+        <input id="author" name="author" value="{{ book.author or '' }}">
+        <button type="button" class="copy" onclick="copyField('author', this)">Copiar</button>
+      </div>
+    </div>
+
+    <div class="field">
       <label for="price">Preço (€)</label>
       <div class="field-row">
-        <input id="price" name="price" type="number" step="0.01" value="{{ book.price if book.price is not none else 7.0 }}">
+        <input id="price" name="price" type="number" step="0.01" value="{{ book.price if book.price is not none else 8.0 }}">
         <button type="button" class="copy" onclick="copyField('price', this)">Copiar</button>
       </div>
     </div>
@@ -162,6 +163,20 @@
       <button type="submit" class="{{ 'warning' if duplicate_book else 'primary' }}">Próximo &rarr;</button>
     </div>
   </form>
+
+  {% if not is_previous %}
+  <div class="secondary-actions">
+    <form method="get" action="/review">
+      <input type="hidden" name="after" value="{{ book.id }}">
+      <button type="submit" class="secondary">Passar por agora</button>
+    </form>
+    {% if book.isbn %}
+    <form method="post" action="/reextract/{{ book.id }}">
+      <button type="submit" class="secondary">Procurar novamente</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if is_previous %}
     <form method="post" action="/revert/{{ book.id }}" onsubmit="return confirm('Enviar este livro de volta para pendente?');">

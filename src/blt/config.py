@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Preço fixo (sem negociação mencionada na descrição - é tratada à parte,
     # e o transporte é gerido pelo próprio Vinted, não é referido aqui)
-    BOOK_PRICE_EUR: float = 7.0
+    BOOK_PRICE_EUR: float = 8.0
 
     # Modo de desenvolvimento: fotos raw nunca são apagadas/movidas (são
     # copiadas), group-all reinicia sempre os livros pending/failed em vez de

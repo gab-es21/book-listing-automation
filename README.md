@@ -80,7 +80,7 @@ flowchart TD
 
 Every step above is implemented and shipped as of `v0.1.0` - see [CHANGELOG.md](CHANGELOG.md) for the release history.
 
-**Fixed by design** (not extracted, not automated): category, condition, and language are always the same for every listing, so pick them by hand in Vinted's UI each time - pasting a valid ISBN into Vinted's own form auto-fills title/author/language there too. Price is a flat `BOOK_PRICE_EUR` (default €7) for every book, not computed or mentioned as a negotiable floor in the description - negotiation happens through Vinted's own offer feature. Transport isn't mentioned either, since Vinted handles shipping natively.
+**Fixed by design** (not extracted, not automated): category, condition, and language are always the same for every listing, so pick them by hand in Vinted's UI each time - pasting a valid ISBN into Vinted's own form auto-fills title/author/language there too. Price is a flat `BOOK_PRICE_EUR` (default €8, set a bit above the actual asking price to leave room for Vinted's offer negotiations) for every book, not computed or mentioned as a negotiable floor in the description. Transport isn't mentioned either, since Vinted handles shipping natively.
 
 ## The web app
 
