@@ -221,6 +221,22 @@ def test_review_form_shows_oldest_pending_book(temp_db):
     assert "1 livro" in r.text
 
 
+def test_review_form_composes_sell_title_from_title_and_author(temp_db):
+    _add_book(temp_db, folder_path="book_sell", title="Sempre Tu", author="Colleen Hoover")
+
+    r = client.get("/review")
+
+    assert 'id="sell_title" value="Sempre Tu - Colleen Hoover"' in r.text
+
+
+def test_review_form_sell_title_omits_dash_when_no_author(temp_db):
+    _add_book(temp_db, folder_path="book_no_author", title="Sempre Tu", author=None)
+
+    r = client.get("/review")
+
+    assert 'id="sell_title" value="Sempre Tu"' in r.text
+
+
 def test_sorted_book_does_not_appear_on_review_page(temp_db):
     _add_book(temp_db, folder_path="book_not_extracted", status="pending", title=None)
 

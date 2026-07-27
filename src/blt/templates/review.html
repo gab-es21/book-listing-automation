@@ -77,6 +77,14 @@
     <input type="hidden" name="book_id" value="{{ book.id }}">
 
     <div class="field">
+      <label for="sell_title">Título do anúncio <span class="field-hint">(Vinted/OLX - título + autor)</span></label>
+      <div class="field-row">
+        <input id="sell_title" value="{{ book.title or '' }}{% if book.author %} - {{ book.author }}{% endif %}">
+        <button type="button" class="copy" onclick="copyField('sell_title', this)">Copiar</button>
+      </div>
+    </div>
+
+    <div class="field">
       <label for="title">Título</label>
       <div class="field-row">
         <input id="title" name="title" value="{{ book.title or '' }}">
