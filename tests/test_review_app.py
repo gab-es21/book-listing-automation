@@ -218,7 +218,7 @@ def test_review_status_bar_hidden_on_the_previous_page(temp_db):
 
     r = client.get("/previous")
 
-    assert '<div class="review-bar">' not in r.text
+    assert '<div class="stat-bar">' not in r.text
 
 
 # -------- Raw images --------
@@ -847,6 +847,63 @@ def test_review_form_has_a_reextract_all_button(temp_db):
 
 
 # -------- Stock --------
+
+def test_stock_bar_status_tab_shows_available_vs_sold_out(temp_db):
+    _add_book(temp_db, folder_path="book_bar_avail1", status="available", title="A")
+    _add_book(temp_db, folder_path="book_bar_avail2", status="available", title="B")
+    _add_book(temp_db, folder_path="book_bar_sold", status="sold_out", title="C", quantity=0)
+
+    r = client.get("/stock")
+
+    assert 'title="Disponível: 2 (66.7%)"' in r.text
+    assert 'title="Esgotado: 1 (33.3%)"' in r.text
+    # status tab shown by default, author tab hidden
+    assert '<div id="stock-tab-status">' in r.text
+    assert '<div id="stock-tab-author" style="display: none;">' in r.text
+
+
+def test_stock_bar_author_tab_ranks_authors_and_groups_the_rest_as_outros(temp_db):
+    for i in range(11):
+        _add_book(
+            temp_db, folder_path=f"book_author_{i}", status="available", title=f"Book {i}",
+            author=f"Author {i}",
+        )
+    # give "Author 0" a second book so it's unambiguously the top author
+    _add_book(temp_db, folder_path="book_author_0_extra", status="available", title="Extra", author="Author 0")
+
+    r = client.get("/stock")
+
+    assert 'title="Author 0: 2 (16.7%)"' in r.text
+    # 10 named authors max - the 11th (single-book) author folds into Outros
+    assert 'title="Outros: 1 (8.3%)"' in r.text
+
+
+def test_stock_bar_groups_missing_author_as_sem_autor(temp_db):
+    _add_book(temp_db, folder_path="book_no_author", status="available", title="X", author=None)
+
+    r = client.get("/stock")
+
+    assert 'title="Sem autor: 1 (100.0%)"' in r.text
+
+
+def test_stock_bar_has_tick_marks_and_tab_buttons(temp_db):
+    _add_book(temp_db, folder_path="book_tick_a", status="available", title="A")
+    _add_book(temp_db, folder_path="book_tick_b", status="available", title="B")
+
+    r = client.get("/stock")
+
+    assert '<div class="progress-ticks" style="background-size: 50.0% 100%;"></div>' in r.text
+    assert 'onclick="showStockTab(\'status\', this)"' in r.text
+    assert 'onclick="showStockTab(\'author\', this)"' in r.text
+
+
+def test_all_three_progress_bars_have_a_visible_title(temp_db):
+    _add_book(temp_db, folder_path="book_title_check", status="available", title="X")
+
+    assert '<h3 class="bar-title">Progresso</h3>' in client.get("/").text
+    assert '<h3 class="bar-title">Estado da fila de confirmação</h3>' in client.get("/review").text
+    assert '<h3 class="bar-title">Estado do stock</h3>' in client.get("/stock").text
+
 
 def test_stock_list_shows_available_books(temp_db):
     _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", quantity=3)
