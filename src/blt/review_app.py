@@ -84,11 +84,27 @@ def _sidebar_counts(s) -> dict:
     stock_count = s.execute(
         select(func.count()).select_from(Book).where(Book.status == "available")
     ).scalar_one()
+
+    # For the header progress bar only: a raw pair is one book, a lone
+    # unpaired leftover photo is half a book (it's not usable yet, but it's
+    # not nothing either) - doesn't affect raw_count above, which stays a
+    # plain image count for the sidebar badge.
+    pairs, leftover = group_photos.propose_pairs()
+    raw_units = len(pairs) + 0.5 * len(leftover)
+    total_units = raw_units + sorted_count + review_count + stock_count
+
+    def _pct(x):
+        return round(x / total_units * 100, 1) if total_units else 0.0
+
     return {
         "raw_count": raw_count,
         "sorted_count": sorted_count,
         "review_count": review_count,
         "stock_count": stock_count,
+        "raw_pct": _pct(raw_units),
+        "sorted_pct": _pct(sorted_count),
+        "review_pct": _pct(review_count),
+        "stock_pct": _pct(stock_count),
     }
 
 

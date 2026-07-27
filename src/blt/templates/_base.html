@@ -11,6 +11,11 @@
     --muted: #6a737d;
     --bg: #f6f8fa;
     --orange: #e8590c;
+    --step-raw: #2a78d6;
+    --step-sorted: #eb6834;
+    --step-review: #1baf7a;
+    --step-stock: #eda100;
+    --header-h: 60px;
   }
   * { box-sizing: border-box; }
   body {
@@ -19,7 +24,28 @@
     background: var(--bg);
     color: #1a1a1a;
   }
-  .app-layout { display: flex; min-height: 100vh; }
+
+  .progress-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: var(--header-h);
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
+  }
+  .progress-bar { display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .progress-bar a { display: block; height: 100%; }
+  .progress-legend { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }
+  .progress-legend a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem; }
+  .progress-legend a:hover { color: #1a1a1a; }
+  .progress-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
+  .app-layout { display: flex; min-height: calc(100vh - var(--header-h)); }
 
   .sidebar {
     flex: 0 0 260px;
@@ -27,8 +53,8 @@
     border-right: 1px solid var(--border);
     padding: 1.5rem 1rem;
     position: sticky;
-    top: 0;
-    height: 100vh;
+    top: var(--header-h);
+    height: calc(100vh - var(--header-h));
     overflow-y: auto;
   }
   .sidebar-title {
@@ -106,6 +132,20 @@
 </style>
 </head>
 <body>
+<header class="progress-header">
+  <div class="progress-bar">
+    <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_pct }}%"></a>
+    <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_pct }}%"></a>
+    <a href="/review" style="width: {{ review_pct }}%; background: var(--step-review);" title="Por confirmar: {{ review_pct }}%"></a>
+    <a href="/stock" style="width: {{ stock_pct }}%; background: var(--step-stock);" title="Stock: {{ stock_pct }}%"></a>
+  </div>
+  <div class="progress-legend">
+    <a href="/raw"><i style="background: var(--step-raw)"></i>Raw {{ raw_pct }}%</a>
+    <a href="/sorted"><i style="background: var(--step-sorted)"></i>Ordenadas {{ sorted_pct }}%</a>
+    <a href="/review"><i style="background: var(--step-review)"></i>Por confirmar {{ review_pct }}%</a>
+    <a href="/stock"><i style="background: var(--step-stock)"></i>Stock {{ stock_pct }}%</a>
+  </div>
+</header>
 <div class="app-layout">
   <nav class="sidebar">
     <a class="sidebar-title" href="/">BookListing</a>

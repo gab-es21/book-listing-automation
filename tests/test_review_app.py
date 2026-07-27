@@ -118,6 +118,55 @@ def test_sidebar_badges_reflect_current_counts(monkeypatch, tmp_path, temp_db):
     assert 'Stock</span><span class="badge">1</span>' in r.text
 
 
+def test_progress_header_weighs_a_leftover_photo_as_half_a_book(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    _make_photo(raw, "only.jpg", time.time())  # 1 unpaired photo -> 0.5 raw book-units
+
+    _add_book(temp_db, folder_path="a", status="pending", title="Resolved")  # review: 1 unit
+
+    r = client.get("/review")
+
+    # total = 0.5 + 1 = 1.5 -> raw 33.3%, review 66.7%
+    assert 'title="Imagens raw: 33.3%"' in r.text
+    assert 'title="Por confirmar: 66.7%"' in r.text
+
+
+def test_progress_header_counts_a_complete_pair_as_one_full_book(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+    base = time.time()
+    _make_photo(raw, "a.jpg", base)
+    _make_photo(raw, "b.jpg", base + 1)  # 1 complete pair -> 1.0 raw book-unit, no leftover
+
+    _add_book(temp_db, folder_path="x", status="pending", title="Resolved")  # review: 1 unit
+
+    r = client.get("/review")
+
+    # total = 1 + 1 = 2 -> 50/50
+    assert 'title="Imagens raw: 50.0%"' in r.text
+    assert 'title="Por confirmar: 50.0%"' in r.text
+
+
+def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_path, temp_db):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    monkeypatch.setattr(review_app.settings, "RAW_DIR", str(raw))
+
+    r = client.get("/review")
+
+    assert r.status_code == 200
+    assert 'title="Imagens raw: 0.0%"' in r.text
+
+
+def test_progress_header_present_on_every_page(temp_db):
+    for path in ("/", "/raw", "/sorted", "/review", "/stock"):
+        r = client.get(path)
+        assert 'class="progress-header"' in r.text, f"missing on {path}"
+
+
 # -------- Raw images --------
 
 def test_raw_page_shows_proposed_pairs_and_leftover(monkeypatch, tmp_path, temp_db):
