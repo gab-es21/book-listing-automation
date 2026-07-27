@@ -15,7 +15,7 @@ dependencies = [
     "pydantic-settings==2.4.0",
     "SQLAlchemy==2.0.32",
     "Pillow>=11.1.0",
-    "requests==2.32.3",
+    "requests==2.33.0",
     "pillow-heif>=1.1.0",
     "imageio-ffmpeg==0.4.9",
     "pyzbar>=0.1.9",
