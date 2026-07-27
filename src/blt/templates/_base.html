@@ -17,6 +17,13 @@
     --step-stock: #eda100;
   }
   * { box-sizing: border-box; }
+  html {
+    /* Always reserve the vertical scrollbar's width, whether this page's
+       content is tall enough to need it or not - otherwise every shared
+       element (sidebar, content, this bar) shifts by a few mm depending on
+       which page happens to scroll. */
+    scrollbar-gutter: stable;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
@@ -34,7 +41,7 @@
     flex-direction: column;
     gap: 0.5rem;
   }
-  .progress-bar { position: relative; display: flex; gap: 2px; height: 15px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .progress-bar { position: relative; display: flex; gap: 2px; height: 30px; border-radius: 4px; overflow: hidden; background: var(--border); }
   .progress-bar a { display: block; height: 100%; }
   .progress-ticks {
     position: absolute;
