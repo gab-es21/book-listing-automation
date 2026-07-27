@@ -159,12 +159,23 @@ def test_progress_header_handles_zero_books_without_crashing(monkeypatch, tmp_pa
 
     assert r.status_code == 200
     assert 'title="Imagens raw: 0.0%"' in r.text
+    assert '<div class="progress-ticks"' not in r.text  # no units to mark, so no tick overlay element
+
+
+def test_progress_bar_has_a_tick_per_unit_when_there_is_data(temp_db):
+    _add_book(temp_db, folder_path="a", status="pending", title="Resolved")
+    _add_book(temp_db, folder_path="b", status="pending", title="Resolved 2")
+
+    r = client.get("/review")
+
+    # 2 review units total -> each unit is 50% of the bar's width
+    assert 'class="progress-ticks" style="background-size: 50.0% 100%;"' in r.text
 
 
 def test_progress_header_present_on_every_page(temp_db):
     for path in ("/", "/raw", "/sorted", "/review", "/stock"):
         r = client.get(path)
-        assert 'class="progress-header"' in r.text, f"missing on {path}"
+        assert 'class="progress-block"' in r.text, f"missing on {path}"
 
 
 # -------- Raw images --------

@@ -105,6 +105,10 @@ def _sidebar_counts(s) -> dict:
         "sorted_pct": _pct(sorted_count),
         "review_pct": _pct(review_count),
         "stock_pct": _pct(stock_count),
+        # width of one single book-unit, as a % of the whole bar - lets the
+        # template draw a faint tick line per unit without dividing by zero
+        # when there's nothing to show yet.
+        "unit_pct": round(100 / total_units, 4) if total_units else 0,
     }
 
 
