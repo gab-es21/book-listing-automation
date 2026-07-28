@@ -57,7 +57,9 @@ flowchart TD
     E --> F["Decode ISBN barcode\n(pyzbar - deterministic)\nblt extract, or /sorted Detetar"]
     F -->|"barcode found"| G["Look up ISBN on Almedina\n(PT bookstore site search)"]
     G -->|"found"| H1["title/author = lookup result"]
-    G -->|"not found"| Z["DB: status = failed\n(ISBN kept if we have one -\nfill in title/author by hand)"]
+    G -->|"not found"| G2["Look up ISBN on isbnsearch.org\n(second, independent source)"]
+    G2 -->|"found"| H1
+    G2 -->|"not found"| Z["DB: status = failed\n(ISBN kept if we have one -\nfill in title/author by hand)"]
     F -->|"no barcode"| Z
 
     H1 --> I["Compose PT description\n+ suggested price"]
@@ -89,7 +91,7 @@ Every step above is implemented and shipped as of `v0.1.0` - see [CHANGELOG.md](
 | Step | Page | What it's for |
 | --- | --- | --- |
 | 1 | **Imagens raw** (`/raw`) | Review/confirm the proposed cover+ISBN photo pairing before committing anything. Swap a pair's cover/ISBN if the chronological guess picked wrong; unpaired photos wait separately, never guessed into a pair. |
-| 2 | **Imagens ordenadas** (`/sorted`) | Grouped `book_NNN` folders waiting on extraction. **Detetar livros** runs barcode+Almedina extraction over all of them at once (same as `blt extract`). |
+| 2 | **Imagens ordenadas** (`/sorted`) | Grouped `book_NNN` folders waiting on extraction. **Detetar livros** runs barcode+Almedina(+isbnsearch.org fallback) extraction over all of them at once (same as `blt extract`). |
 | 3 | **Livros por confirmar** (`/review`) | The copy-paste review page: one book at a time, both photos inline, an editable form (título, autor, descrição, ISBN, preço, quantidade) ordered the way Vinted's own form asks for it. One-click **Copiar** per field. **Próximo** saves your edits and marks the book `available` - meaning "I already created the real Vinted listing." `/previous` is a safety net to recheck the last-reviewed book and send it back to `pending` if you catch a mistake. |
 | 4 | **Stock** (`/stock`) | Every listed book - searchable, sortable, paginated - with its remaining `quantity` and a **Marcar 1 vendido** button. Inline edit (pencil icon) and delete (trash icon) per row. Sold-out books stay visible, styled distinctly, instead of disappearing. |
 
@@ -111,9 +113,11 @@ There's no reliable alternative to a real ISBN, so this doesn't try to guess one
 
 Once we have a real ISBN, we look it up on **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal, low-volume, rate-limited use, authorized directly by contacts who run the site). A real browser User-Agent is used rather than an honest custom one - confirmed directly: an earlier honest, self-identifying UA got blocked on every request, while the same request with a real Chrome UA succeeded immediately and repeatedly.
 
-If the barcode can't be decoded, or Almedina doesn't have that ISBN, the book is **not** guessed at via a vision model reading the cover - it's marked `status = failed` and left for you to fill in by hand. Live testing showed small local vision models misreading fine print often enough that trusting them wasn't worth it: a barcode is either read correctly or not read at all, so "give up and ask a human" beats "confidently guess wrong." (Google Books was also tried and dropped - its free tier's daily quota was easily exhausted, and its `isbn:`-query backend had its own reliability issues.)
+If Almedina doesn't have that ISBN (common for foreign/mass-market imprints its small, local-press-focused catalog doesn't carry), **isbnsearch.org** is tried as a second, independent source before giving up. It was picked deliberately after checking several alternatives' `robots.txt`: isbnsearch.org allows every crawler on every path, while the others considered either disallowed the exact path needed or named AI/Claude bots explicitly in their blocked list. It's a small ad/affiliate-supported reference site, so scraping its metadata doesn't undercut a business built on selling that data - unlike a dedicated ISBN-database vendor. An honest, self-identifying User-Agent works fine here (no browser-UA workaround needed), and the same small random delay used for Almedina is applied before every request.
 
-This is an expected, not-a-bug limitation: some books need manual entry when Almedina doesn't carry them or a barcode photo doesn't decode cleanly (glare, blur, a bent spine). The review page surfaces these separately with blank fields so you can type them in by hand instead of trusting an unreliable guess.
+If the barcode can't be decoded, or neither Almedina nor isbnsearch.org has that ISBN, the book is **not** guessed at via a vision model reading the cover - it's marked `status = failed` and left for you to fill in by hand. Live testing showed small local vision models misreading fine print often enough that trusting them wasn't worth it: a barcode is either read correctly or not read at all, so "give up and ask a human" beats "confidently guess wrong." (Google Books was also tried and dropped - its free tier's daily quota was easily exhausted, and its `isbn:`-query backend had its own reliability issues.)
+
+This is an expected, not-a-bug limitation: some books need manual entry when neither source carries them or a barcode photo doesn't decode cleanly (glare, blur, a bent spine). The review page surfaces these separately with blank fields so you can type them in by hand instead of trusting an unreliable guess.
 
 ## Development mode
 
@@ -121,7 +125,7 @@ This is an expected, not-a-bug limitation: some books need manual entry when Alm
 
 - **Photo intake** (`blt convert-heic`, `blt group-all`) copies instead of moving/deleting - `photos_raw/` always keeps its originals.
 - **`blt group-all`** resets first: clears out any existing `pending`/`failed` book folders + DB rows before regrouping fresh from the same raw photos, so you always get the same small batch back. It **never touches `available`/`sold_out` rows** - real listing/sale history survives regardless of `DEV_MODE`.
-- **`blt extract`** reuses any title/author already resolved for that exact ISBN before, instead of hitting Almedina again - only a genuinely new ISBN triggers a real (still paced) lookup.
+- **`blt extract`** reuses any title/author already resolved for that exact ISBN before, instead of hitting Almedina/isbnsearch.org again - only a genuinely new ISBN triggers a real (still paced) lookup.
 - **The review page** never promotes a book to `available` on **Próximo** - it cycles through the pending/failed queue instead, so it never empties. A "DEV MODE" badge on the page makes this obvious at a glance.
 
 Default is `false` - leave it that way for real usage.
@@ -132,7 +136,7 @@ Default is `false` - leave it that way for real usage.
 blt initdb                      # create the local SQLite schema
 blt group-all [--max-groups N]  # sort+pair everything in photos_raw/ into photos_grouped/book_NNN/
 blt convert-heic PATH           # convert HEIC/HEIF photos to JPEG in place
-blt extract [--limit N]         # run barcode+Almedina extraction on pending books missing data
+blt extract [--limit N]         # run barcode+Almedina(+isbnsearch.org fallback) extraction on pending books missing data
 blt review [--host] [--port]    # open the local web app: /, /raw, /sorted, /review, /stock
 ```
 
