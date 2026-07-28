@@ -1,11 +1,12 @@
 """
-Barcode + Almedina lookup only - no vision/LLM fallback.
+Barcode + Almedina (+ isbnsearch.org fallback) lookup only - no vision/LLM
+fallback.
 
 A photographed cover isn't a reliable enough source of truth for title and
 author (small local models misread fine print often enough to matter), and
 there is no acceptable alternative to a real, checksum-verified ISBN: once
-`pyzbar` can't decode the barcode, or the decoded ISBN doesn't resolve to a
-known title on Almedina, this gives up rather than guess - the book is left
+`pyzbar` can't decode the barcode, or neither lookup resolves the decoded
+ISBN to a known title, this gives up rather than guess - the book is left
 unresolved for the human to fill in by hand.
 """
 import random
@@ -18,6 +19,8 @@ from . import db
 from .almedina_lookup import AlmedinaLookupError, lookup_by_isbn
 from .barcode import decode_isbn_barcode
 from .config import settings
+from .isbnsearch_lookup import IsbnSearchLookupError
+from .isbnsearch_lookup import lookup_by_isbn as isbnsearch_lookup_by_isbn
 from .listing import compose_listing
 from .models import Book
 
@@ -25,9 +28,10 @@ from .models import Book
 def extract_book_fields(folder: Path) -> dict:
     """
     Returns {"title", "author", "isbn"}. `title` is None when the book could
-    not be resolved (no barcode, or Almedina doesn't have it) - the caller
-    marks that book status="failed" for manual entry. The barcode-decoded
-    ISBN is kept even when unresolved, since it's still valid on its own.
+    not be resolved (no barcode, or neither Almedina nor isbnsearch.org has
+    it) - the caller marks that book status="failed" for manual entry. The
+    barcode-decoded ISBN is kept even when unresolved, since it's still
+    valid on its own.
     """
     folder = Path(folder)
     isbn = decode_isbn_barcode(folder / "isbn.jpg")
@@ -39,6 +43,15 @@ def extract_book_fields(folder: Path) -> dict:
     except AlmedinaLookupError:
         looked_up = None
 
+    if not (looked_up and looked_up.get("title")):
+        # Almedina is a small, personal-scale Portuguese bookstore - it
+        # doesn't carry every book, especially foreign/mass-market imprints.
+        # isbnsearch.org is a second, independent attempt before giving up.
+        try:
+            looked_up = isbnsearch_lookup_by_isbn(isbn)
+        except IsbnSearchLookupError:
+            looked_up = None
+
     if looked_up and looked_up.get("title"):
         return {"title": looked_up["title"], "author": looked_up.get("author"), "isbn": isbn}
     return {"title": None, "author": None, "isbn": isbn}
@@ -48,9 +61,10 @@ def _extract_with_dev_cache(s, folder: Path) -> dict:
     """
     DEV_MODE only: if we already have a resolved title for this exact ISBN
     from an earlier real lookup (any book, any status), reuse it instead of
-    hitting Almedina again - repeated dev-mode runs over the same fixed test
-    photos would otherwise burn the rate limit re-resolving the same ISBNs.
-    Genuinely new ISBNs still fall through to a real (paced) lookup.
+    hitting Almedina/isbnsearch.org again - repeated dev-mode runs over the
+    same fixed test photos would otherwise burn the rate limit re-resolving
+    the same ISBNs. Genuinely new ISBNs still fall through to a real
+    (paced) lookup.
     """
     folder = Path(folder)
     isbn = decode_isbn_barcode(folder / "isbn.jpg")
@@ -74,7 +88,7 @@ def extract_pending_books(limit: int | None = None) -> dict:
     entry when not. Commits after each book, so interrupting mid-run only
     loses the book in progress, and re-running only touches what's still
     status="pending" - already-failed rows are left alone. A small random
-    delay between books keeps a multi-book run well under Almedina's
+    delay between books keeps a multi-book run well under either lookup's
     observed rate limit.
     """
     with db.SessionLocal() as s:
