@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Second-source ISBN fallback: when Almedina doesn't carry a resolved barcode's ISBN, `isbnsearch.org` is now tried before giving up - picked after checking its `robots.txt` allows every crawler, unlike several other candidates considered and rejected (explicit disallows, or AI/Claude bots named directly in their blocked list).
+
 ## [0.1.0] - 2026-07-27
 
 First release: a working manual-assist tool for listing used books on Vinted.
