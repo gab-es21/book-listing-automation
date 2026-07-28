@@ -791,10 +791,30 @@ def test_review_form_reextract_button_hidden_without_isbn(temp_db):
     assert 'action="/reextract/' not in r.text
 
 
+class _SyncThread:
+    """Stand-in for threading.Thread that runs the target immediately, in the
+    calling thread, instead of really threading - makes the background bulk
+    reextract job deterministic and synchronous under test."""
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+def _reset_bulk_state():
+    review_app._bulk_reextract_state.update(running=False, current=0, total=0, book_label=None)
+
+
 def test_reextract_all_resolves_every_book_in_the_queue(monkeypatch, temp_db):
+    _reset_bulk_state()
     a_id = _add_book(temp_db, folder_path="book_bulk_a", status="failed", isbn="1")
     b_id = _add_book(temp_db, folder_path="book_bulk_b", status="failed", isbn="2")
     monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
     monkeypatch.setattr(
         review_app, "extract_book_fields",
         lambda folder: {"title": f"Resolved {folder}", "author": None, "isbn": "999"},
@@ -810,11 +830,13 @@ def test_reextract_all_resolves_every_book_in_the_queue(monkeypatch, temp_db):
 
 
 def test_reextract_all_paces_requests_between_books_not_before_the_first(monkeypatch, temp_db):
+    _reset_bulk_state()
     _add_book(temp_db, folder_path="book_bulk_c", status="failed", isbn="1")
     _add_book(temp_db, folder_path="book_bulk_d", status="failed", isbn="2")
     _add_book(temp_db, folder_path="book_bulk_e", status="failed", isbn="3")
     sleep_calls = []
     monkeypatch.setattr(review_app.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
     monkeypatch.setattr(review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": None})
 
     client.post("/reextract-all")
@@ -823,9 +845,11 @@ def test_reextract_all_paces_requests_between_books_not_before_the_first(monkeyp
 
 
 def test_reextract_all_uses_dev_cache_in_dev_mode(monkeypatch, temp_db):
+    _reset_bulk_state()
     monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
     book_id = _add_book(temp_db, folder_path="book_bulk_dev", status="failed", isbn="1")
     monkeypatch.setattr(review_app, "extract_book_fields", _boom_if_called)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
     monkeypatch.setattr(
         review_app, "_extract_with_dev_cache",
         lambda s, folder: {"title": "Cached", "author": None, "isbn": "1"},
@@ -837,12 +861,68 @@ def test_reextract_all_uses_dev_cache_in_dev_mode(monkeypatch, temp_db):
         assert s.get(Book, book_id).title == "Cached"
 
 
+def test_reextract_all_returns_started_and_total_as_json(monkeypatch, temp_db):
+    _reset_bulk_state()
+    _add_book(temp_db, folder_path="book_bulk_f", status="failed", isbn="1")
+    _add_book(temp_db, folder_path="book_bulk_g", status="failed", isbn="2")
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": None})
+
+    r = client.post("/reextract-all")
+
+    assert r.json() == {"started": True, "total": 2}
+
+
+def test_reextract_all_does_not_start_a_second_run_while_one_is_in_progress(monkeypatch, temp_db):
+    _reset_bulk_state()
+    _add_book(temp_db, folder_path="book_bulk_h", status="failed", isbn="1")
+    review_app._bulk_reextract_state.update(running=True, current=1, total=3, book_label="Alguma coisa")
+    monkeypatch.setattr(review_app.threading, "Thread", lambda *a, **k: _boom_if_called())
+
+    r = client.post("/reextract-all")
+
+    assert r.json() == {"started": False, "already_running": True}
+
+
+def test_reextract_all_status_reports_progress_per_book(monkeypatch, temp_db):
+    _reset_bulk_state()
+    _add_book(temp_db, folder_path="book_bulk_i", status="failed", isbn="1")
+    _add_book(temp_db, folder_path="book_bulk_j", status="failed", isbn="2")
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    snapshots = []
+
+    def fake_reextract_one(s, book):
+        snapshots.append(dict(review_app._bulk_reextract_state))
+        book.title = f"Resolved {book.folder_path}"
+        book.status = "pending"
+
+    monkeypatch.setattr(review_app, "_reextract_one", fake_reextract_one)
+
+    client.post("/reextract-all")
+
+    assert [snap["current"] for snap in snapshots] == [1, 2]
+    assert all(snap["total"] == 2 for snap in snapshots)
+    assert all(snap["running"] for snap in snapshots)
+    assert review_app._bulk_reextract_state["running"] is False
+
+
+def test_reextract_all_status_endpoint_returns_current_state(monkeypatch, temp_db):
+    _reset_bulk_state()
+    review_app._bulk_reextract_state.update(running=True, current=2, total=5, book_label="A Villa")
+
+    r = client.get("/reextract-all/status")
+
+    assert r.json() == {"running": True, "current": 2, "total": 5, "book_label": "A Villa"}
+
+
 def test_review_form_has_a_reextract_all_button(temp_db):
     _add_book(temp_db, folder_path="book_bulk_button", status="failed", isbn="1")
 
     r = client.get("/review")
 
-    assert 'action="/reextract-all"' in r.text
+    assert 'id="reextract-all-btn"' in r.text
     assert "procurar todos novamente" in r.text
 
 

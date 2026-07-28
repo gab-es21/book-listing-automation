@@ -58,6 +58,20 @@
 
   .bar-title { margin: 0; font-size: 0.95rem; font-weight: 700; color: #1a1a1a; }
 
+  /* Reused anywhere a button/status line needs to show "still working" -
+     inherits currentColor so it matches whatever text/button it sits in. */
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* Shared by any other page-specific stacked bar (review queue, stock) -
      same look as .progress-bar/.progress-legend above, but with plain <div>
      segments instead of <a> ones, since these don't link to other pages. */
