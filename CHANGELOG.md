@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Second-source ISBN fallback: when Almedina doesn't carry a resolved barcode's ISBN, `isbnsearch.org` is now tried before giving up - picked after checking its `robots.txt` allows every crawler, unlike several other candidates considered and rejected (explicit disallows, or AI/Claude bots named directly in their blocked list).
+- Live progress feedback on the review page's re-search actions: "procurar todos novamente" now runs in the background and shows a spinner with a live "a procurar X de Y" counter and progress bar instead of leaving the page hanging for the whole paced multi-book run; the single "Procurar" button also shows a spinner while its request is in flight.
 
 ## [0.1.0] - 2026-07-27
 

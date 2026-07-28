@@ -115,6 +115,29 @@
     text-decoration: underline;
     cursor: pointer;
   }
+  .link-button:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+
+  .bulk-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .bulk-progress-bar {
+    flex: 0 1 200px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bulk-progress-bar > div {
+    height: 100%;
+    background: var(--step-review);
+    transition: width 0.4s ease;
+    width: 0%;
+  }
 {% endblock %}
 {% block content %}
 {% if not is_previous %}
@@ -145,10 +168,13 @@
     <p class="subtitle">
       {{ remaining }} livro(s) por confirmar &middot; <a href="/previous">rever o anterior</a>
       &middot;
-      <form method="post" action="/reextract-all" class="inline-form" onsubmit="return confirm('Procurar novamente todos os livros por confirmar? Isto pode demorar um pouco.');">
-        <button type="submit" class="link-button">procurar todos novamente</button>
-      </form>
+      <button type="button" class="link-button" id="reextract-all-btn" onclick="startBulkReextract()">procurar todos novamente</button>
     </p>
+    <div class="bulk-progress" id="bulk-progress" hidden>
+      <span class="spinner"></span>
+      <span id="bulk-progress-text"></span>
+      <div class="bulk-progress-bar"><div id="bulk-progress-fill"></div></div>
+    </div>
   {% else %}
     <h1>Não há livros por confirmar</h1>
   {% endif %}
@@ -230,7 +256,7 @@
   <div class="review-actions">
     {% if not is_previous %}
     {% if book.isbn %}
-    <form method="post" action="/reextract/{{ book.id }}">
+    <form method="post" action="/reextract/{{ book.id }}" onsubmit="startSingleReextract(this)">
       <button type="submit" class="retry">Procurar <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
     </form>
     {% endif %}
@@ -263,6 +289,43 @@ function copyField(id, btn) {
     btn.textContent = "Copiado!";
     setTimeout(() => { btn.textContent = original; }, 1200);
   });
+}
+
+function startSingleReextract(form) {
+  const btn = form.querySelector("button");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> A procurar...';
+  return true;
+}
+
+function startBulkReextract() {
+  if (!confirm("Procurar novamente todos os livros por confirmar? Isto pode demorar um pouco.")) return;
+  document.getElementById("reextract-all-btn").disabled = true;
+  fetch("/reextract-all", { method: "POST" }).then(() => pollBulkReextractStatus());
+}
+
+function pollBulkReextractStatus() {
+  fetch("/reextract-all/status")
+    .then(r => r.json())
+    .then(data => {
+      if (data.total === 0 && !data.running) {
+        document.getElementById("reextract-all-btn").disabled = false;
+        return;
+      }
+      const box = document.getElementById("bulk-progress");
+      const text = document.getElementById("bulk-progress-text");
+      const fill = document.getElementById("bulk-progress-fill");
+      box.hidden = false;
+      const pct = data.total ? Math.round((data.current / data.total) * 100) : 0;
+      fill.style.width = pct + "%";
+      const label = data.book_label ? ` - "${data.book_label}"` : "";
+      text.textContent = `A procurar ${data.current} de ${data.total}${label}`;
+      if (data.running) {
+        setTimeout(pollBulkReextractStatus, 1000);
+      } else {
+        setTimeout(() => location.reload(), 500);
+      }
+    });
 }
 </script>
 {% endblock %}

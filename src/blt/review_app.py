@@ -5,6 +5,7 @@ detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
 import random
+import threading
 import time
 from datetime import datetime, timezone
 from io import BytesIO
@@ -26,6 +27,13 @@ from .models import Book, Sale
 
 _HEIC_EXTS = {".heic", ".heif"}
 _SAFE_ORIGIN_HOSTS = {"localhost", "127.0.0.1"}
+
+# "Procurar todos novamente" runs in a background thread (the paced,
+# multi-book run can take a while) - this is the only state it reports back
+# to the page polling /reextract-all/status. Single-process, single-user
+# app, so a plain dict + lock is enough; no real concurrency to worry about.
+_bulk_reextract_lock = threading.Lock()
+_bulk_reextract_state: dict = {"running": False, "current": 0, "total": 0, "book_label": None}
 
 
 def _serve_image(path: Path):
@@ -179,6 +187,31 @@ def _reextract_one(s, book: Book) -> None:
     else:
         book.isbn = fields["isbn"]
         book.status = "failed"
+
+
+def _run_bulk_reextract(book_ids: list[int]) -> None:
+    """Runs in a background thread: re-extracts every given book, one at a
+    time with the same pacing as extract_pending_books, publishing progress
+    to _bulk_reextract_state as it goes so /reextract-all/status has
+    something live to report."""
+    total = len(book_ids)
+    with _bulk_reextract_lock:
+        _bulk_reextract_state.update(running=True, current=0, total=total, book_label=None)
+    try:
+        with db.SessionLocal() as s:
+            for i, book_id in enumerate(book_ids):
+                if i > 0:
+                    time.sleep(random.uniform(2, 5))
+                book = s.get(Book, book_id)
+                if book is None:
+                    continue
+                with _bulk_reextract_lock:
+                    _bulk_reextract_state.update(current=i + 1, book_label=book.title or Path(book.folder_path).name)
+                _reextract_one(s, book)
+                s.commit()
+    finally:
+        with _bulk_reextract_lock:
+            _bulk_reextract_state["running"] = False
 
 
 def _sidebar_counts(s) -> dict:
@@ -432,16 +465,22 @@ def reextract_book(book_id: int):
 def reextract_all_books():
     """Procurar todos novamente: re-runs extraction for every book still
     waiting on confirmation (failed or already resolved), not just the one
-    currently shown. Paced the same way extract_pending_books is, to stay
-    well under Almedina's observed rate limit across a multi-book run."""
+    currently shown. Runs in a background thread, paced the same way
+    extract_pending_books is, so the page can poll /reextract-all/status and
+    show live progress instead of blocking on the full multi-book run."""
+    with _bulk_reextract_lock:
+        if _bulk_reextract_state["running"]:
+            return {"started": False, "already_running": True}
     with db.SessionLocal() as s:
-        books = s.execute(select(Book).where(_REVIEW_FILTER)).scalars().all()
-        for i, book in enumerate(books):
-            if i > 0:
-                time.sleep(random.uniform(2, 5))
-            _reextract_one(s, book)
-            s.commit()
-    return RedirectResponse("/review", status_code=303)
+        book_ids = list(s.execute(select(Book.id).where(_REVIEW_FILTER)).scalars().all())
+    threading.Thread(target=_run_bulk_reextract, args=(book_ids,), daemon=True).start()
+    return {"started": True, "total": len(book_ids)}
+
+
+@app.get("/reextract-all/status")
+def reextract_all_status():
+    with _bulk_reextract_lock:
+        return dict(_bulk_reextract_state)
 
 
 @app.get("/previous", response_class=HTMLResponse)
