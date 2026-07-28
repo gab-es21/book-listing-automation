@@ -125,6 +125,10 @@
     font-size: 0.85rem;
     color: var(--muted);
   }
+  /* [hidden] and .bulk-progress both have specificity 0,1,0 - without this,
+     the later author rule above wins the cascade and the attribute is
+     silently ignored, leaving the spinner visible at all times. */
+  .bulk-progress[hidden] { display: none; }
   .bulk-progress-bar {
     flex: 0 1 200px;
     height: 6px;
