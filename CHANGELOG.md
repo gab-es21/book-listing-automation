@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The bulk re-search progress spinner stayed visible even while idle - `.bulk-progress { display: flex }` and the browser's built-in `[hidden] { display: none }` rule had equal CSS specificity, so the author rule silently won the cascade regardless of the `hidden` attribute.
-- The review page's price field's native up/down spin buttons could round to a whole euro instead of a cent on some browser/OS combinations despite `step="0.01"` being set correctly - replaced with custom stepper buttons that call `stepUp()`/`stepDown()` directly, which are spec-guaranteed to honor the step attribute.
+- The review page's price field's native up/down spin buttons had inconsistent granularity on some browser/OS combinations - replaced with custom stepper buttons that call `stepUp(100)`/`stepDown(100)` directly (100 steps of the field's `step="0.01"`), moving the price by a whole euro per click for quick adjustment while typing a price directly still allows cents.
 
 ## [0.1.0] - 2026-07-27
 
