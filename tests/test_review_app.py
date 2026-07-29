@@ -1546,3 +1546,61 @@ def test_photo_serves_existing_file(temp_db, tmp_path):
 
     assert r.status_code == 200
     assert r.content == b"fake-jpeg-bytes"
+
+
+def test_rotate_photo_turns_it_90_degrees_on_disk(temp_db, tmp_path):
+    folder = tmp_path / "book_rotate"
+    folder.mkdir()
+    path = folder / "cover.jpg"
+    Image.new("RGB", (100, 60), (10, 20, 30)).save(path, "JPEG")
+    book_id = _add_book(temp_db, folder_path=str(folder))
+
+    r = client.post(f"/photo/{book_id}/cover.jpg/rotate")
+
+    assert r.json() == {"rotated": True}
+    with Image.open(path) as rotated:
+        assert rotated.size == (60, 100)  # width/height swapped - a real rotation, not a no-op
+
+
+def test_rotate_photo_four_times_returns_to_original_orientation(temp_db, tmp_path):
+    folder = tmp_path / "book_rotate_full_circle"
+    folder.mkdir()
+    path = folder / "cover.jpg"
+    Image.new("RGB", (100, 60), (10, 20, 30)).save(path, "JPEG")
+    book_id = _add_book(temp_db, folder_path=str(folder))
+
+    for _ in range(4):
+        client.post(f"/photo/{book_id}/cover.jpg/rotate")
+
+    with Image.open(path) as final:
+        assert final.size == (100, 60)
+
+
+def test_rotate_photo_rejects_unknown_filename(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_rotate_bad_name")
+
+    r = client.post(f"/photo/{book_id}/secret.txt/rotate")
+
+    assert r.status_code == 404
+
+
+def test_rotate_photo_404s_when_file_missing_on_disk(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_rotate_missing")
+
+    r = client.post(f"/photo/{book_id}/cover.jpg/rotate")
+
+    assert r.status_code == 404
+
+
+def test_rotate_photo_404s_for_unknown_book(temp_db):
+    r = client.post("/photo/999999/cover.jpg/rotate")
+    assert r.status_code == 404
+
+
+def test_review_form_has_rotate_buttons_for_both_photos(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_rotate_ui", title="Rotatable")
+
+    r = client.get("/review")
+
+    assert f"rotatePhoto({book_id}, 'cover.jpg', 'photo-cover-{book_id}')" in r.text
+    assert f"rotatePhoto({book_id}, 'isbn.jpg', 'photo-isbn-{book_id}')" in r.text
