@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # voltar a bater na Almedina. Nunca mexe em livros available/sold_out.
     DEV_MODE: bool = False
 
+    # Webhook de um canal Discord para os botões "Enviar para Discord" em
+    # /review e /stock. Vazio desativa-os (não é obrigatório).
+    DISCORD_WEBHOOK_URL: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()

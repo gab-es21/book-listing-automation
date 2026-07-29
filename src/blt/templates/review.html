@@ -104,19 +104,6 @@
   }
   button.retry:hover { background: #c94a0a; }
 
-  .inline-form { display: inline; }
-  .link-button {
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: var(--green-dark);
-    text-decoration: underline;
-    cursor: pointer;
-  }
-  .link-button:disabled { color: var(--muted); text-decoration: none; cursor: default; }
-
   .bulk-progress {
     display: flex;
     align-items: center;
@@ -169,16 +156,18 @@
     <p class="subtitle"><a href="/review">&larr; voltar ao livro atual</a></p>
   {% elif book %}
     <h1>Livro por confirmar</h1>
-    <p class="subtitle">
-      {{ remaining }} livro(s) por confirmar &middot; <a href="/previous">rever o anterior</a>
-      &middot;
-      <button type="button" class="link-button" id="reextract-all-btn" onclick="startBulkReextract()">procurar todos novamente</button>
-    </p>
+    <p class="subtitle">{{ remaining }} livro(s) por confirmar</p>
+    <div class="header-actions">
+      <a href="/previous" class="header-action"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Rever o anterior</a>
+      <button type="button" class="header-action" id="reextract-all-btn" onclick="startBulkReextract()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Procurar todos novamente</button>
+      <button type="button" class="header-action" id="discord-review-btn" onclick="sendReviewListToDiscord()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg> Enviar para Discord</button>
+    </div>
     <div class="bulk-progress" id="bulk-progress" hidden>
       <span class="spinner"></span>
       <span id="bulk-progress-text"></span>
       <div class="bulk-progress-bar"><div id="bulk-progress-fill"></div></div>
     </div>
+    <div class="action-status" id="discord-review-status" hidden></div>
   {% else %}
     <h1>Não há livros por confirmar</h1>
   {% endif %}
@@ -330,6 +319,31 @@ function pollBulkReextractStatus() {
         setTimeout(() => location.reload(), 500);
       }
     });
+}
+
+function sendReviewListToDiscord() {
+  const btn = document.getElementById("discord-review-btn");
+  const status = document.getElementById("discord-review-status");
+  btn.disabled = true;
+  status.hidden = true;
+  fetch("/review/notify-discord", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      status.hidden = false;
+      if (data.sent) {
+        status.className = "action-status success";
+        status.textContent = `Enviado para o Discord (${data.count} livro(s)).`;
+      } else {
+        status.className = "action-status error";
+        status.textContent = `Erro ao enviar: ${data.error}`;
+      }
+    })
+    .catch(() => {
+      status.hidden = false;
+      status.className = "action-status error";
+      status.textContent = "Erro ao enviar: falha de rede.";
+    })
+    .finally(() => { btn.disabled = false; });
 }
 </script>
 {% endblock %}
