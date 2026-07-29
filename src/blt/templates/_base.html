@@ -72,6 +72,32 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* A row of small pill-shaped actions next to a page header - "rever o
+     anterior", "procurar todos novamente", "enviar para Discord", etc.
+     Shared between review.html and available.html. */
+  .header-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+  .header-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    text-decoration: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .header-action:hover { border-color: var(--green); color: var(--green-dark); }
+  .header-action:disabled { opacity: 0.6; cursor: default; }
+
+  .action-status { margin-top: 0.5rem; font-size: 0.85rem; }
+  .action-status.success { color: var(--green-dark); }
+  .action-status.error { color: #c92a2a; }
+
   /* Shared by any other page-specific stacked bar (review queue, stock) -
      same look as .progress-bar/.progress-legend above, but with plain <div>
      segments instead of <a> ones, since these don't link to other pages. */

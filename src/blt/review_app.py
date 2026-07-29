@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, case, func, or_, select
 
-from . import db, group_photos
+from . import db, discord_notify, group_photos
 from .config import settings
 from .extract import _extract_with_dev_cache, extract_book_fields, extract_pending_books
 from .images import IMG_EXTS, load_image_any
@@ -132,6 +132,113 @@ def _review_queue_breakdown(s) -> dict:
         # progress bar's unit_pct, for a tick mark per book.
         "review_unit_pct": round(100 / total, 4) if total else 0,
     }
+
+
+_DISCORD_MAX_ATTACHMENTS = 10
+_DISCORD_MAX_CONTENT = 1900  # a little under Discord's 2000-char cap, room for the header line
+
+_PHYSICAL_PILE_TITLES = {
+    "foto": "📸 Tirar nova foto (ISBN não detetado)",
+    "manual": "✋ Inserir à mão (ISBN não encontrado)",
+    "vender": "✅ Pronto para vender",
+}
+_PHYSICAL_PILE_ORDER = ["foto", "manual", "vender"]
+
+
+def _physical_pile(s, book: Book) -> tuple[str, str]:
+    """Maps a review book to one of the 3 piles the user actually acts on
+    physically - unlike the 4-way red/grey/yellow/green classification
+    above, which also distinguishes a bookkeeping detail (duplicate merge)
+    that doesn't change where the physical book goes. Returns
+    (pile_key, a note to append for that book, e.g. "already in stock")."""
+    classification = _classify_review_book(s, book)
+    if classification == "red":
+        return "foto", ""
+    if classification == "grey":
+        return "manual", ""
+    if classification == "yellow":
+        return "vender", " _(já em stock, vai somar quantidade)_"
+    return "vender", ""
+
+
+def _review_book_line(book: Book, note: str = "") -> str:
+    parts = [f"`{Path(book.folder_path).name}`"]
+    if book.title:
+        parts.append(f"**{book.title}**" + (f" — {book.author}" if book.author else ""))
+    if book.isbn:
+        parts.append(f"ISBN {book.isbn}")
+    return "- " + " · ".join(parts) + note
+
+
+def send_review_sort_list_to_discord(s) -> int:
+    """Groups every book still in the review queue into the 3 physical
+    sorting piles and posts one Discord message per pile (split further if
+    a pile has more books than Discord's 10-attachment-per-message limit),
+    each with its cover photo attached alongside the book_NNN id so it's
+    easy to match the message to the physical book. Returns how many books
+    were sent."""
+    books = s.execute(select(Book).where(_REVIEW_FILTER).order_by(Book.id)).scalars().all()
+    piles: dict[str, list[tuple[Book, str]]] = {key: [] for key in _PHYSICAL_PILE_ORDER}
+    for book in books:
+        pile, note = _physical_pile(s, book)
+        piles[pile].append((book, note))
+
+    for pile in _PHYSICAL_PILE_ORDER:
+        entries = piles[pile]
+        for start in range(0, len(entries), _DISCORD_MAX_ATTACHMENTS):
+            batch = entries[start : start + _DISCORD_MAX_ATTACHMENTS]
+            lines = [_PHYSICAL_PILE_TITLES[pile]] + [_review_book_line(book, note) for book, note in batch]
+            files = []
+            for book, _note in batch:
+                cover = Path(book.folder_path) / "cover.jpg"
+                if cover.exists():
+                    files.append((f"{Path(book.folder_path).name}.jpg", cover.read_bytes(), "image/jpeg"))
+            discord_notify.post_message("\n".join(lines), files=files or None)
+    return len(books)
+
+
+def _stock_book_line(book: Book) -> str:
+    parts = [f"**{book.title or 'Sem título'}**"]
+    if book.author:
+        parts.append(book.author)
+    if book.isbn:
+        parts.append(f"ISBN {book.isbn}")
+    parts.append(f"{book.price:.2f}€" if book.price is not None else "sem preço")
+    parts.append(f"qtd {book.quantity}")
+    parts.append("disponível" if book.status == "available" else "esgotado")
+    return "- " + " · ".join(parts)
+
+
+def send_stock_list_to_discord(s) -> int:
+    """Posts the current stock (available + sold_out) as plain-text
+    messages, batched to stay under Discord's per-message character limit.
+    No photos - unlike the review sorting list, there's no "which physical
+    book is this" ambiguity to solve here, every stocked book is already a
+    confirmed, listed entry."""
+    books = s.execute(select(Book).where(Book.status.in_(_VISIBLE_STATUSES)).order_by(Book.title)).scalars().all()
+    header = f"📦 Stock atual — {len(books)} livro(s)"
+
+    batches: list[list[str]] = []
+    current: list[str] = []
+    current_len = 0
+    for book in books:
+        line = _stock_book_line(book)
+        if current and current_len + len(line) + 1 > _DISCORD_MAX_CONTENT:
+            batches.append(current)
+            current, current_len = [], 0
+        current.append(line)
+        current_len += len(line) + 1
+    if current:
+        batches.append(current)
+
+    if not batches:
+        discord_notify.post_message(header)
+        return 0
+
+    for i, batch in enumerate(batches):
+        prefix = header if i == 0 else f"📦 Stock atual (cont. {i + 1})"
+        discord_notify.post_message("\n".join([prefix, *batch]))
+    return len(books)
 
 
 _STOCK_AUTHOR_TOP_N = 10
@@ -483,6 +590,16 @@ def reextract_all_status():
         return dict(_bulk_reextract_state)
 
 
+@app.post("/review/notify-discord")
+def notify_discord_review():
+    with db.SessionLocal() as s:
+        try:
+            sent = send_review_sort_list_to_discord(s)
+        except discord_notify.DiscordNotifyError as e:
+            return {"sent": False, "error": str(e)}
+    return {"sent": True, "count": sent}
+
+
 @app.get("/previous", response_class=HTMLResponse)
 def previous_book(request: Request):
     with db.SessionLocal() as s:
@@ -572,6 +689,16 @@ def stock_list(
             "sold_out_count": total - available_count,
             "total_pages": total_pages,
         })
+
+
+@app.post("/stock/notify-discord")
+def notify_discord_stock():
+    with db.SessionLocal() as s:
+        try:
+            sent = send_stock_list_to_discord(s)
+        except discord_notify.DiscordNotifyError as e:
+            return {"sent": False, "error": str(e)}
+    return {"sent": True, "count": sent}
 
 
 @app.post("/sold/{book_id}")

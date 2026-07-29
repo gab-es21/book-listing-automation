@@ -1230,6 +1230,216 @@ def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
     assert r.text.index("Zzz Still Here") < r.text.index("Gone")
 
 
+# -------- Discord notifications --------
+
+def _make_cover(folder, data=b"fake-jpeg-bytes"):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "cover.jpg").write_bytes(data)
+
+
+def _capture_post_message(monkeypatch):
+    """Replaces discord_notify.post_message with a recorder and returns the
+    list of (content, files) tuples it was called with."""
+    calls = []
+
+    def record(content, files=None):
+        calls.append((content, files))
+
+    monkeypatch.setattr(review_app.discord_notify, "post_message", record)
+    return calls
+
+
+def test_send_review_sort_list_groups_into_three_physical_piles(monkeypatch, temp_db, tmp_path):
+    calls = _capture_post_message(monkeypatch)
+
+    foto_folder = tmp_path / "book_foto"
+    _make_cover(foto_folder)
+    _add_book(temp_db, folder_path=str(foto_folder), status="failed", isbn=None)
+
+    manual_folder = tmp_path / "book_manual"
+    _make_cover(manual_folder)
+    _add_book(temp_db, folder_path=str(manual_folder), status="failed", isbn="9789896689704")
+
+    vender_folder = tmp_path / "book_vender"
+    _make_cover(vender_folder)
+    _add_book(
+        temp_db, folder_path=str(vender_folder), status="pending",
+        isbn="9789896689705", title="Pronto", author="Alguém",
+    )
+
+    with temp_db() as s:
+        sent = review_app.send_review_sort_list_to_discord(s)
+
+    assert sent == 3
+    assert len(calls) == 3  # one message per non-empty pile
+    contents = [content for content, _files in calls]
+    assert any("Tirar nova foto" in c and "book_foto" in c for c in contents)
+    assert any("Inserir à mão" in c and "book_manual" in c for c in contents)
+    assert any("Pronto para vender" in c and "book_vender" in c and "Pronto" in c for c in contents)
+    # each message attaches the cover photo of every book it lists
+    assert all(files and len(files) == 1 for _content, files in calls)
+
+
+def test_send_review_sort_list_notes_duplicates_as_will_merge(monkeypatch, temp_db, tmp_path):
+    calls = _capture_post_message(monkeypatch)
+    _add_book(
+        temp_db, folder_path="book_existing_stock", status="available",
+        isbn="9789896689704", title="Já em Stock",
+    )
+    dup_folder = tmp_path / "book_dup"
+    _make_cover(dup_folder)
+    _add_book(temp_db, folder_path=str(dup_folder), status="pending", isbn="9789896689704", title="Já em Stock")
+
+    with temp_db() as s:
+        review_app.send_review_sort_list_to_discord(s)
+
+    sell_message = next(content for content, _files in calls if "Pronto para vender" in content)
+    assert "já em stock" in sell_message
+
+
+def test_send_review_sort_list_batches_over_ten_attachments_per_message(monkeypatch, temp_db, tmp_path):
+    calls = _capture_post_message(monkeypatch)
+    for i in range(12):
+        folder = tmp_path / f"book_{i}"
+        _make_cover(folder)
+        _add_book(
+            temp_db, folder_path=str(folder), status="pending",
+            isbn=f"978989668970{i % 10}", title=f"Livro {i}",
+        )
+
+    with temp_db() as s:
+        sent = review_app.send_review_sort_list_to_discord(s)
+
+    assert sent == 12
+    sell_messages = [files for content, files in calls if "Pronto para vender" in content]
+    assert len(sell_messages) == 2  # 12 books split into batches of 10 + 2
+    assert len(sell_messages[0]) == 10
+    assert len(sell_messages[1]) == 2
+
+
+def test_send_review_sort_list_skips_attachment_when_cover_missing(monkeypatch, temp_db):
+    calls = _capture_post_message(monkeypatch)
+    _add_book(temp_db, folder_path="book_no_cover_on_disk", status="failed", isbn=None)
+
+    with temp_db() as s:
+        review_app.send_review_sort_list_to_discord(s)
+
+    content, files = calls[0]
+    assert "book_no_cover_on_disk" in content
+    assert files is None
+
+
+def test_send_review_sort_list_empty_queue_sends_nothing(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app.discord_notify, "post_message", _boom_if_called)
+
+    with temp_db() as s:
+        sent = review_app.send_review_sort_list_to_discord(s)
+
+    assert sent == 0
+
+
+def test_send_stock_list_reports_every_visible_book(monkeypatch, temp_db):
+    calls = _capture_post_message(monkeypatch)
+    _add_book(
+        temp_db, folder_path="book_a", status="available", title="Livro A", author="Autora A",
+        isbn="9789896689704", price=9.5, quantity=2,
+    )
+    _add_book(
+        temp_db, folder_path="book_b", status="sold_out", title="Livro B", author="Autor B",
+        isbn="9789896689705", price=7.0, quantity=0,
+    )
+
+    with temp_db() as s:
+        sent = review_app.send_stock_list_to_discord(s)
+
+    assert sent == 2
+    assert len(calls) == 1
+    content = calls[0][0]
+    assert "Livro A" in content and "disponível" in content
+    assert "Livro B" in content and "esgotado" in content
+
+
+def test_send_stock_list_empty_stock_still_posts_a_header(monkeypatch, temp_db):
+    calls = _capture_post_message(monkeypatch)
+
+    with temp_db() as s:
+        sent = review_app.send_stock_list_to_discord(s)
+
+    assert sent == 0
+    assert len(calls) == 1
+    assert "Stock atual" in calls[0][0]
+
+
+def test_send_stock_list_batches_when_content_exceeds_the_limit(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app, "_DISCORD_MAX_CONTENT", 50)
+    calls = _capture_post_message(monkeypatch)
+    for i in range(5):
+        _add_book(
+            temp_db, folder_path=f"book_{i}", status="available",
+            title=f"Um Título Razoavelmente Longo {i}", quantity=1,
+        )
+
+    with temp_db() as s:
+        sent = review_app.send_stock_list_to_discord(s)
+
+    assert sent == 5
+    assert len(calls) > 1
+
+
+def test_notify_discord_review_endpoint_reports_success(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app, "send_review_sort_list_to_discord", lambda s: 4)
+
+    r = client.post("/review/notify-discord")
+
+    assert r.json() == {"sent": True, "count": 4}
+
+
+def test_notify_discord_review_endpoint_reports_error(monkeypatch, temp_db):
+    def raise_error(s):
+        raise review_app.discord_notify.DiscordNotifyError("DISCORD_WEBHOOK_URL não está configurado no .env.")
+
+    monkeypatch.setattr(review_app, "send_review_sort_list_to_discord", raise_error)
+
+    r = client.post("/review/notify-discord")
+
+    assert r.json() == {"sent": False, "error": "DISCORD_WEBHOOK_URL não está configurado no .env."}
+
+
+def test_notify_discord_stock_endpoint_reports_success(monkeypatch, temp_db):
+    monkeypatch.setattr(review_app, "send_stock_list_to_discord", lambda s: 7)
+
+    r = client.post("/stock/notify-discord")
+
+    assert r.json() == {"sent": True, "count": 7}
+
+
+def test_notify_discord_stock_endpoint_reports_error(monkeypatch, temp_db):
+    def raise_error(s):
+        raise review_app.discord_notify.DiscordNotifyError("boom")
+
+    monkeypatch.setattr(review_app, "send_stock_list_to_discord", raise_error)
+
+    r = client.post("/stock/notify-discord")
+
+    assert r.json() == {"sent": False, "error": "boom"}
+
+
+def test_review_form_has_a_discord_button(temp_db):
+    _add_book(temp_db, folder_path="book_discord_review", status="failed", isbn="1")
+
+    r = client.get("/review")
+
+    assert 'id="discord-review-btn"' in r.text
+    assert "Enviar para Discord" in r.text
+
+
+def test_stock_page_has_a_discord_button(temp_db):
+    r = client.get("/stock")
+
+    assert 'id="discord-stock-btn"' in r.text
+    assert "Enviar para Discord" in r.text
+
+
 # -------- Photos --------
 
 def test_photo_rejects_unknown_filename(temp_db):
