@@ -122,6 +122,10 @@
 <header class="page-header">
   <h1>Stock</h1>
   <p class="subtitle">{{ available_count }} disponível(is) &middot; {{ sold_out_count }} esgotado(s)</p>
+  <div class="header-actions">
+    <button type="button" class="header-action" id="discord-stock-btn" onclick="sendStockListToDiscord()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg> Enviar para Discord</button>
+  </div>
+  <div class="action-status" id="discord-stock-status" hidden></div>
 </header>
 
 <div class="card">
@@ -245,6 +249,30 @@ function showStockTab(tab, btn) {
   document.getElementById("stock-tab-author").style.display = tab === "author" ? "" : "none";
   btn.parentElement.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
   btn.classList.add("active");
+}
+function sendStockListToDiscord() {
+  const btn = document.getElementById("discord-stock-btn");
+  const status = document.getElementById("discord-stock-status");
+  btn.disabled = true;
+  status.hidden = true;
+  fetch("/stock/notify-discord", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      status.hidden = false;
+      if (data.sent) {
+        status.className = "action-status success";
+        status.textContent = `Enviado para o Discord (${data.count} livro(s)).`;
+      } else {
+        status.className = "action-status error";
+        status.textContent = `Erro ao enviar: ${data.error}`;
+      }
+    })
+    .catch(() => {
+      status.hidden = false;
+      status.className = "action-status error";
+      status.textContent = "Erro ao enviar: falha de rede.";
+    })
+    .finally(() => { btn.disabled = false; });
 }
 </script>
 {% endblock %}

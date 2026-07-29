@@ -15,6 +15,7 @@ CLI + local web tool that helps list used books for sale on Vinted: take phone p
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [The web app](#the-web-app)
+- [Discord notifications](#discord-notifications)
 - [ISBN-first extraction](#isbn-first-extraction)
 - [Development mode](#development-mode)
 - [CLI reference](#cli-reference)
@@ -106,6 +107,15 @@ The landing page (`/`) is a dashboard: the same four steps as a flow diagram, ru
 - **Stock editing** is deliberately not auto-save-on-change, since `<input type="number">` responds to mouse-wheel scrolling and could silently change the price if it auto-saved - edits start disabled (grey) until a field actually changes, then turn green/red to save or discard.
 
 </details>
+
+## Discord notifications
+
+Both `/review` and `/stock` have an **Enviar para Discord** button - an optional, manual, one-way push so you can check either list from your phone without opening the app. It's a plain [Discord webhook](https://support.discord.com/hc/en-us/articles/228383668) (a single URL created from a channel's own settings), not a bot: no token, no persistent connection, nothing that needs to run continuously. Leave `DISCORD_WEBHOOK_URL` unset in `.env` to disable both buttons entirely - they fail with a clear error instead of doing nothing silently.
+
+- **`/review`**'s button groups every book still waiting on confirmation into the 3 piles you'd actually sort them into physically - 📸 *tirar nova foto* (no ISBN decoded), ✋ *inserir à mão* (ISBN decoded but not resolved), ✅ *pronto para vender* (resolved, whether unique or merging into existing stock) - each posted as its own Discord message with every book's `book_NNN` id, title/author/ISBN when known, and its cover photo attached (so it's easy to match to the physical book, assuming - like this app's own folder numbering - you keep them stacked in the order you photographed them). A pile with more than 10 books splits across a couple of messages, since that's Discord's per-message attachment cap.
+- **`/stock`**'s button posts the full current stock (title, author, ISBN, price, quantity, available/sold-out) as plain text, batched to stay under Discord's message-length limit. No photos here - every stocked book is already a confirmed, listed entry, so there's no "which physical book is this" ambiguity to solve the way there is mid-review.
+
+**Setup**: in Discord, go to a channel's *Settings → Integrations → Webhooks → New Webhook*, copy its URL, and set `DISCORD_WEBHOOK_URL` to it in `.env`.
 
 ## ISBN-first extraction
 
