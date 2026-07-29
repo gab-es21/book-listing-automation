@@ -407,7 +407,16 @@ def test_review_form_defaults_price_to_8_when_unset(temp_db):
 
     r = client.get("/review")
 
-    assert 'id="price" name="price" type="number" step="0.01" value="8.0"' in r.text
+    assert 'id="price" name="price" type="number" step="0.01" min="0" class="no-native-spin" value="8.0"' in r.text
+
+
+def test_review_form_price_has_custom_stepper_buttons(temp_db):
+    _add_book(temp_db, folder_path="book_price_stepper", status="failed", price=7.98)
+
+    r = client.get("/review")
+
+    assert 'onclick="stepPrice(1)"' in r.text
+    assert 'onclick="stepPrice(-1)"' in r.text
 
 
 def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
@@ -630,17 +639,19 @@ def test_review_form_three_action_buttons_share_one_row_with_distinct_colors(tem
 
     r = client.get("/review")
 
-    # all three live in the same .review-actions flex row, not split across
+    # all four live in the same .review-actions flex row, not split across
     # separate rows - the primary button is pulled out of #review-form via
-    # the form="" attribute so it can sit alongside the other two. Ordered
-    # Procurar -> Passar -> Criar/Adicionar.
+    # the form="" attribute so it can sit alongside the others. Ordered
+    # Eliminar -> Procurar -> Passar -> Criar/Adicionar (delete kept away
+    # from the primary confirm button to reduce mis-click risk).
     actions_start = r.text.index('<div class="review-actions">')
     actions_end = r.text.index("</div>", actions_start)
     actions_html = r.text[actions_start:actions_end]
+    eliminar_i = actions_html.index('class="danger">Eliminar <svg')
     procurar_i = actions_html.index('class="retry">Procurar <svg')
     passar_i = actions_html.index('class="info">Passar <svg')
     criar_i = actions_html.index('form="review-form" class="primary">Criar <svg')
-    assert procurar_i < passar_i < criar_i
+    assert eliminar_i < procurar_i < passar_i < criar_i
     assert f'action="/reextract/{book_id}"' in r.text
 
 
@@ -1068,6 +1079,73 @@ def test_delete_removes_sold_out_book(temp_db):
 def test_delete_unknown_book_404s(temp_db):
     r = client.post("/delete/999999")
     assert r.status_code == 404
+
+
+def test_review_delete_removes_folder_and_db_row(temp_db, tmp_path):
+    folder = tmp_path / "book_review_del"
+    folder.mkdir()
+    (folder / "cover.jpg").write_bytes(b"fake-cover")
+    (folder / "isbn.jpg").write_bytes(b"fake-isbn")
+    book_id = _add_book(temp_db, folder_path=str(folder), status="failed", isbn="1")
+
+    r = client.post(f"/review/delete/{book_id}", follow_redirects=False)
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/review"
+    assert not folder.exists()
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None
+
+
+def test_review_delete_works_on_pending_books_too(temp_db, tmp_path):
+    folder = tmp_path / "book_review_del_pending"
+    folder.mkdir()
+    book_id = _add_book(temp_db, folder_path=str(folder), status="pending", title="Resolved but unconfirmed")
+
+    client.post(f"/review/delete/{book_id}")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None
+
+
+def test_review_delete_handles_missing_folder_gracefully(temp_db, tmp_path):
+    missing_folder = tmp_path / "already_gone"
+    book_id = _add_book(temp_db, folder_path=str(missing_folder), status="failed", isbn=None)
+
+    r = client.post(f"/review/delete/{book_id}")
+
+    assert r.status_code in (200, 303)
+    with temp_db() as s:
+        assert s.get(Book, book_id) is None
+
+
+def test_review_delete_unknown_book_404s(temp_db):
+    r = client.post("/review/delete/999999")
+    assert r.status_code == 404
+
+
+def test_review_delete_rejects_books_already_in_stock(temp_db, tmp_path):
+    folder = tmp_path / "book_already_available"
+    folder.mkdir()
+    (folder / "cover.jpg").write_bytes(b"fake-cover")
+    book_id = _add_book(temp_db, folder_path=str(folder), status="available", title="Já Listado")
+
+    r = client.post(f"/review/delete/{book_id}")
+
+    assert r.status_code == 400
+    assert folder.exists()  # photos of a real listing are never touched
+    with temp_db() as s:
+        assert s.get(Book, book_id) is not None
+
+
+def test_review_form_has_a_delete_button_with_confirm(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_review_del_ui", status="failed", isbn="1")
+
+    r = client.get("/review")
+
+    assert f'action="/review/delete/{book_id}"' in r.text
+    assert '<button type="submit" class="danger">Eliminar <svg' in r.text
+    assert "Não pode ser desfeito" in r.text
 
 
 def test_stock_page_has_a_delete_button_per_row(temp_db):

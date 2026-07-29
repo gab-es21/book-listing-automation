@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live progress feedback on the review page's re-search actions: "procurar todos novamente" now runs in the background and shows a spinner with a live "a procurar X de Y" counter and progress bar instead of leaving the page hanging for the whole paced multi-book run; the single "Procurar" button also shows a spinner while its request is in flight.
 - Discord notifications: an optional "Enviar para Discord" button on `/review` groups the confirmation queue into the 3 physical sorting piles (retake photo / enter by hand / ready to sell) with cover photos attached; a matching button on `/stock` posts the full current stock as text. Both are a plain webhook (`DISCORD_WEBHOOK_URL` in `.env`) - no bot, no token beyond the URL itself, disabled entirely when unset.
 - Restyled the review page's header actions ("rever o anterior", "procurar todos novamente", "enviar para Discord") as a consistent row of icon buttons instead of a plain text/link line.
+- An "Eliminar" button on `/review`, next to Procurar/Passar/Criar, permanently removes a book still waiting on confirmation - both its photo folder on disk and its database entry. Restricted to books still `pending`/`failed`, so it can never touch the photos of a book already in stock (that's what the existing `/stock` delete button, DB-row-only, is for).
 
 ### Fixed
 - The bulk re-search progress spinner stayed visible even while idle - `.bulk-progress { display: flex }` and the browser's built-in `[hidden] { display: none }` rule had equal CSS specificity, so the author rule silently won the cascade regardless of the `hidden` attribute.
+- The review page's price field's native up/down spin buttons could round to a whole euro instead of a cent on some browser/OS combinations despite `step="0.01"` being set correctly - replaced with custom stepper buttons that call `stepUp()`/`stepDown()` directly, which are spec-guaranteed to honor the step attribute.
 
 ## [0.1.0] - 2026-07-27
 
