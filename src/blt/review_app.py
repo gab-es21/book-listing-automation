@@ -783,3 +783,23 @@ def photo(book_id: int, name: str):
         if not path.exists():
             raise HTTPException(404)
         return FileResponse(path)
+
+
+@app.post("/photo/{book_id}/{name}/rotate")
+def rotate_photo(book_id: int, name: str):
+    """Rotates cover.jpg/isbn.jpg 90° clockwise, in place on disk - not just
+    a CSS transform, since dragging the image out of the browser into
+    Vinted pulls the actual file bytes, not however this page happens to
+    render it."""
+    if name not in _PHOTO_NAMES:
+        raise HTTPException(404)
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        path = Path(book.folder_path) / name
+        if not path.exists():
+            raise HTTPException(404)
+    rotated = load_image_any(path).convert("RGB").rotate(-90, expand=True)
+    rotated.save(path, "JPEG", quality=95)
+    return {"rotated": True}
