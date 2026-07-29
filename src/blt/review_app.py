@@ -5,6 +5,7 @@ detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
 import random
+import shutil
 import threading
 import time
 from datetime import datetime, timezone
@@ -551,6 +552,27 @@ def skip_book(book_id: int):
         if book is None:
             raise HTTPException(404)
         book.skipped_at = datetime.now(timezone.utc)
+        s.commit()
+    return RedirectResponse("/review", status_code=303)
+
+
+@app.post("/review/delete/{book_id}")
+def delete_review_book(book_id: int):
+    """Elimina por completo um livro ainda na fila de confirmação: a pasta
+    de fotos (cover.jpg + isbn.jpg) no disco e a entrada na base de dados -
+    ao contrário de /delete (stock), que só remove a entrada e nunca deveria
+    tocar em fotos de um livro já listado. Restrito a pending/failed por
+    segurança: nunca deve apagar as fotos de um livro já em stock."""
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        if book.status not in ("pending", "failed"):
+            raise HTTPException(400, "Este livro já não está na fila de confirmação.")
+        folder = Path(book.folder_path)
+        if folder.exists():
+            shutil.rmtree(folder)
+        s.delete(book)
         s.commit()
     return RedirectResponse("/review", status_code=303)
 
