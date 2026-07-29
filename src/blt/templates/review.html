@@ -359,8 +359,10 @@ function copyField(id, btn) {
 }
 
 function stepPrice(direction) {
+  // Moves by a whole euro per click (100 steps of the input's step="0.01")
+  // - typing a price still allows cents, this is just for quick adjustment.
   const el = document.getElementById("price");
-  if (direction > 0) { el.stepUp(); } else { el.stepDown(); }
+  if (direction > 0) { el.stepUp(100); } else { el.stepDown(100); }
 }
 
 function rotatePhoto(bookId, name, imgId) {
