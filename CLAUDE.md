@@ -36,9 +36,9 @@ CI (`.github/workflows/ci.yml`) runs `uv sync --locked`, ruff, mypy, and pytest-
 
 ## Things to know before changing behavior
 
-- This is a **manual-assist** tool, not Vinted automation — deliberately, after the automated approach hit anti-bot systems on a real account (see README). Don't reintroduce direct posting/API automation without discussing it first.
+- This is a **manual-assist** tool.
 - Almedina lookups are personal, low-volume, and rate-limited by design (a small random delay in `almedina_lookup.py`). Don't remove the delay or scale up request volume — this only works because it stays under the radar of a site that hasn't explicitly authorized bulk use.
-- `isbnsearch_lookup.py` is a second-source fallback tried only when Almedina misses — it was added after checking its `robots.txt` allows every crawler (several other candidates were rejected for disallowing the needed path, or naming AI/Claude bots explicitly). Same small random delay as Almedina applies. Before adding another external lookup source, check its `robots.txt` first — that's the deciding factor, not just "does it have the data."
+- `isbnsearch_lookup.py` is a second-source fallback tried only when Almedina misses. Same small random delay as Almedina applies.
 - `DEV_MODE` (`.env`) changes pipeline behavior for repeatable local testing (see README's "Development mode" section for the exact guarantees). It must never let a real `available`/`sold_out` book or a real sale be lost or altered.
 - The review app has no authentication by design (single-user, localhost-only). The Origin/Referer CSRF check in `review_app.py` is the only thing standing between that and a real cross-origin write — don't remove it without replacing it with something at least as strong.
 - Discord notifications (`discord_notify.py`) are a plain webhook (`DISCORD_WEBHOOK_URL` in `.env`, optional), not a bot — no token, no persistent process. Keep it that way; don't introduce `discord.py` or a bot process for this without discussing it first, since nothing here needs two-way control from Discord.

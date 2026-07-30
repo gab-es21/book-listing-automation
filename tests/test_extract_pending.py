@@ -111,7 +111,8 @@ def test_dev_mode_reuses_cached_title_without_calling_almedina(monkeypatch, temp
         s.commit()
 
     monkeypatch.setattr(extract, "decode_isbn_barcode", lambda p: "9789896689704")
-    monkeypatch.setattr(extract, "lookup_by_isbn", _boom)  # must not be called
+    monkeypatch.setattr(extract, "vinted_lookup_by_isbn", _boom)  # must not be called
+    monkeypatch.setattr(extract, "almedina_lookup_by_isbn", _boom)  # must not be called
 
     result = extract.extract_pending_books()
 
@@ -130,7 +131,9 @@ def test_dev_mode_still_looks_up_a_genuinely_new_isbn(monkeypatch, temp_db):
         s.commit()
 
     monkeypatch.setattr(extract, "decode_isbn_barcode", lambda p: "9789897100833")
-    monkeypatch.setattr(extract, "lookup_by_isbn", lambda isbn: {"title": "Brand New Book", "author": "Some Author"})
+    monkeypatch.setattr(
+        extract, "vinted_lookup_by_isbn", lambda isbn: {"title": "Brand New Book", "author": "Some Author"}
+    )
 
     result = extract.extract_pending_books()
 
