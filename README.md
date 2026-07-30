@@ -12,16 +12,18 @@ CLI + local web tool that helps list used books for sale on Vinted: take phone p
 
 ## Contents
 
-- [Quick start](#quick-start)
-- [How it works](#how-it-works)
-- [The web app](#the-web-app)
-- [Discord notifications](#discord-notifications)
-- [ISBN-first extraction](#isbn-first-extraction)
-- [Development mode](#development-mode)
-- [CLI reference](#cli-reference)
-- [Why not automate the Vinted posting itself?](#why-not-automate-the-vinted-posting-itself)
-- [Testing](#testing)
-- [Contributing / branching](#contributing--branching)
+- [Book Listing Automation (blt)](#book-listing-automation-blt)
+  - [Contents](#contents)
+  - [Quick start](#quick-start)
+  - [How it works](#how-it-works)
+  - [The web app](#the-web-app)
+  - [Discord notifications](#discord-notifications)
+  - [ISBN-first extraction](#isbn-first-extraction)
+  - [Development mode](#development-mode)
+  - [CLI reference](#cli-reference)
+  - [Why not automate the Vinted posting itself?](#why-not-automate-the-vinted-posting-itself)
+  - [Testing](#testing)
+  - [Contributing / branching](#contributing--branching)
 
 ## Quick start
 
@@ -121,9 +123,9 @@ Both `/review` and `/stock` have an **Enviar para Discord** button - an optional
 
 There's no reliable alternative to a real ISBN, so this doesn't try to guess one: `pyzbar` decodes the actual EAN-13 barcode from the ISBN close-up photo - a solved, deterministic computer-vision problem, not OCR. A successful decode already implies a valid checksum.
 
-Once we have a real ISBN, we look it up on **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal, low-volume, rate-limited use, authorized directly by contacts who run the site). A real browser User-Agent is used rather than an honest custom one - confirmed directly: an earlier honest, self-identifying UA got blocked on every request, while the same request with a real Chrome UA succeeded immediately and repeatedly.
+Once we have a real ISBN, we look it up on **Almedina** (a Portuguese bookstore's own site search - good coverage for small local-press/book-club editions; personal, low-volume, rate-limited use, authorized directly by contacts who run the site).
 
-If Almedina doesn't have that ISBN (common for foreign/mass-market imprints its small, local-press-focused catalog doesn't carry), **isbnsearch.org** is tried as a second, independent source before giving up. It was picked deliberately after checking several alternatives' `robots.txt`: isbnsearch.org allows every crawler on every path, while the others considered either disallowed the exact path needed or named AI/Claude bots explicitly in their blocked list. It's a small ad/affiliate-supported reference site, so scraping its metadata doesn't undercut a business built on selling that data - unlike a dedicated ISBN-database vendor. An honest, self-identifying User-Agent works fine here (no browser-UA workaround needed), and the same small random delay used for Almedina is applied before every request.
+If Almedina doesn't have that ISBN (common for foreign/mass-market imprints its small, local-press-focused catalog doesn't carry), **isbnsearch.org** is tried as a second, independent source before giving up.
 
 If the barcode can't be decoded, or neither Almedina nor isbnsearch.org has that ISBN, the book is **not** guessed at via a vision model reading the cover - it's marked `status = failed` and left for you to fill in by hand. Live testing showed small local vision models misreading fine print often enough that trusting them wasn't worth it: a barcode is either read correctly or not read at all, so "give up and ask a human" beats "confidently guess wrong." (Google Books was also tried and dropped - its free tier's daily quota was easily exhausted, and its `isbn:`-query backend had its own reliability issues.)
 
@@ -157,9 +159,7 @@ Run any of these as `uv run blt ...`, or activate the venv first (`.venv\Scripts
 <details>
 <summary>We tried - here's what happened</summary>
 
-Vinted has no public API for individual sellers, and every automated-posting approach - Selenium, direct HTTP calls replaying a captured session, even `fetch()` executed inside an authenticated browser tab - eventually hit a real anti-bot wall: CAPTCHA, a full IP/session block, Chromium's App-Bound Encryption, or Datadome's TLS/behavioral fingerprinting.
-
-Rather than keep fighting systems specifically built to stop this, this tool automates *everything except* the final "create listing" click, which you do yourself in a couple of minutes per book.
+Vinted has no public API for individual sellers.
 
 </details>
 
