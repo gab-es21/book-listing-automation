@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A rotate button on each of `/review`'s two photos (cover, ISBN), 90° clockwise per click. Rotates the actual file on disk rather than just its on-page display, so a photo taken sideways or upside-down still comes out right-side-up when dragged straight from the page into Vinted's own upload dialog.
 
 ### Fixed
+- ISBN lookup fallback chain (Vinted → Almedina → isbnsearch.org) stopped at the first source that returned a title, even if that source left `author` empty. Now a source only fills in whatever field(s) are still missing, and never overwrites a field an earlier source already filled - the chain keeps going until both title and author are filled or all sources are exhausted.
 - The bulk re-search progress spinner stayed visible even while idle - `.bulk-progress { display: flex }` and the browser's built-in `[hidden] { display: none }` rule had equal CSS specificity, so the author rule silently won the cascade regardless of the `hidden` attribute.
 - The review page's price field's native up/down spin buttons had inconsistent granularity on some browser/OS combinations - replaced with custom stepper buttons that call `stepUp(100)`/`stepDown(100)` directly (100 steps of the field's `step="0.01"`), moving the price by a whole euro per click for quick adjustment while typing a price directly still allows cents.
 
