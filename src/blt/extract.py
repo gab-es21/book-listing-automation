@@ -13,6 +13,10 @@ Lookup Priority:
 1. Vinted (vinted.pt API) - Best autofill accuracy for platforms/listings.
 2. Almedina (almedina.net) - Local Portuguese publisher/small-print fallback.
 3. ISBNSearch (isbnsearch.org) - Global/international mass-market fallback.
+
+A source is never allowed to overwrite a field another source already filled;
+sources are only asked to fill in whatever is still missing. Lookups stop as
+soon as both title and author are filled, or once all sources are exhausted.
 """
 import random
 import time
@@ -37,42 +41,40 @@ def extract_book_fields(folder: Path) -> dict:
     """
     Returns {"title", "author", "isbn"}. `title` is None when the book could
     not be resolved (no barcode, or neither Vinted, Almedina, nor isbnsearch.org
-    has it) - the caller marks that book status="failed" for manual entry. The
-    barcode-decoded ISBN is kept even when unresolved, since it's still
-    valid on its own.
+    has a title for it) - the caller marks that book status="failed" for manual
+    entry. The barcode-decoded ISBN is kept even when unresolved, since it's
+    still valid on its own.
     """
     folder = Path(folder)
     isbn = decode_isbn_barcode(folder / "isbn.jpg")
     if not isbn:
         return {"title": None, "author": None, "isbn": None}
 
-    looked_up = None
+    title: str | None = None
+    author: str | None = None
 
-    # 1. Primary Attempt: Vinted Internal API
-    try:
-        looked_up = vinted_lookup_by_isbn(isbn)
-    except VintedLookupError:
-        looked_up = None
+    sources = (
+        (vinted_lookup_by_isbn, VintedLookupError),
+        (almedina_lookup_by_isbn, AlmedinaLookupError),
+        (isbnsearch_lookup_by_isbn, IsbnSearchLookupError),
+    )
 
-    # 2. Secondary Attempt: Almedina (Portuguese market)
-    if not (looked_up and looked_up.get("title")):
+    for lookup, error_cls in sources:
+        if title and author:
+            break
+
         try:
-            looked_up = almedina_lookup_by_isbn(isbn)
-        except AlmedinaLookupError:
+            looked_up = lookup(isbn)
+        except error_cls:
             looked_up = None
 
-    # 3. Tertiary Attempt: ISBNSearch.org (International / Mass-market)
-    if not (looked_up and looked_up.get("title")):
-        try:
-            looked_up = isbnsearch_lookup_by_isbn(isbn)
-        except IsbnSearchLookupError:
-            looked_up = None
+        if not looked_up:
+            continue
 
-    # Return fields if any lookup succeeded in obtaining a title
-    if looked_up and looked_up.get("title"):
-        return {"title": looked_up["title"], "author": looked_up.get("author"), "isbn": isbn}
+        title = title or looked_up.get("title")
+        author = author or looked_up.get("author")
 
-    return {"title": None, "author": None, "isbn": isbn}
+    return {"title": title, "author": author, "isbn": isbn}
 
 
 def _extract_with_dev_cache(s, folder: Path) -> dict:
