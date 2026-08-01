@@ -504,7 +504,14 @@ def submit_next(
     description: str = Form(""),
     price: float = Form(...),
     quantity: int = Form(1),
+    on_vinted: str | None = Form(None),
+    on_olx: str | None = Form(None),
+    on_marketplace: str | None = Form(None),
 ):
+    on_vinted_flag = on_vinted is not None
+    on_olx_flag = on_olx is not None
+    on_marketplace_flag = on_marketplace is not None
+
     with db.SessionLocal() as s:
         book = s.get(Book, book_id)
         if book is None:
@@ -515,12 +522,17 @@ def submit_next(
         if existing is not None:
             # Same ISBN already stocked - fold this pending copy into that
             # listing (bump its quantity, refresh its fields) instead of
-            # creating a second entry for the same book.
+            # creating a second entry for the same book. Platform flags are
+            # OR'd in rather than overwritten - if this copy is going on OLX
+            # too, the existing listing is now on OLX too, not "just OLX".
             existing.title = title or None
             existing.author = author or None
             existing.description = description or None
             existing.price = price
             existing.quantity = existing.quantity + quantity
+            existing.on_vinted = existing.on_vinted or on_vinted_flag
+            existing.on_olx = existing.on_olx or on_olx_flag
+            existing.on_marketplace = existing.on_marketplace or on_marketplace_flag
             existing.status = "available"
             s.delete(book)
             s.commit()
@@ -531,6 +543,9 @@ def submit_next(
         book.description = description or None
         book.price = price
         book.quantity = quantity
+        book.on_vinted = on_vinted_flag
+        book.on_olx = on_olx_flag
+        book.on_marketplace = on_marketplace_flag
         if settings.DEV_MODE:
             # Nothing is ever consumed in DEV_MODE, so "next" means the same
             # thing as a skip: push this book behind the rest of the queue
@@ -723,13 +738,33 @@ def notify_discord_stock():
     return {"sent": True, "count": sent}
 
 
+def _book_platform_codes(book: Book) -> list[str]:
+    codes = []
+    if book.on_vinted:
+        codes.append("vinted")
+    if book.on_olx:
+        codes.append("olx")
+    if book.on_marketplace:
+        codes.append("marketplace")
+    return codes
+
+
 @app.post("/sold/{book_id}")
-def mark_one_sold(book_id: int):
+def mark_one_sold(book_id: int, platform: str = Form("")):
     with db.SessionLocal() as s:
         book = s.get(Book, book_id)
         if book is None:
             raise HTTPException(404)
-        s.add(Sale(book_id=book.id, title=book.title, isbn=book.isbn, price=book.price))
+        codes = _book_platform_codes(book)
+        if len(codes) == 1:
+            # Only ever posted in one place - no ambiguity, ignore whatever
+            # (if anything) the client sent.
+            sold_platform = codes[0]
+        elif platform in codes:
+            sold_platform = platform
+        else:
+            sold_platform = None
+        s.add(Sale(book_id=book.id, title=book.title, isbn=book.isbn, price=book.price, platform=sold_platform))
         book.quantity = max(book.quantity - 1, 0)
         if book.quantity == 0:
             book.status = "sold_out"
@@ -745,6 +780,9 @@ def update_book_in_stock(
     isbn: str = Form(""),
     price: float = Form(...),
     quantity: int = Form(1),
+    on_vinted: str | None = Form(None),
+    on_olx: str | None = Form(None),
+    on_marketplace: str | None = Form(None),
 ):
     with db.SessionLocal() as s:
         book = s.get(Book, book_id)
@@ -755,6 +793,9 @@ def update_book_in_stock(
         book.isbn = isbn or None
         book.price = price
         book.quantity = quantity
+        book.on_vinted = on_vinted is not None
+        book.on_olx = on_olx is not None
+        book.on_marketplace = on_marketplace is not None
         book.status = "sold_out" if quantity <= 0 else "available"
         s.commit()
     return RedirectResponse("/stock", status_code=303)
