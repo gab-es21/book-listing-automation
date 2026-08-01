@@ -2,7 +2,7 @@ import re
 import shutil
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
 from .config import settings
@@ -12,8 +12,33 @@ engine = create_engine(settings.DB_URL, future=True)
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
+# Base.metadata.create_all only creates missing *tables*, not missing
+# *columns* on tables that already exist - so upgrading an existing blt.db
+# (real inventory data) to a schema with new columns needs an explicit,
+# additive ALTER TABLE step. Existing rows keep all their other data; the
+# new column is simply backfilled with its default for them.
+_BOOK_COLUMNS_TO_ADD = [
+    ("on_vinted", "BOOLEAN DEFAULT 1"),
+    ("on_olx", "BOOLEAN DEFAULT 0"),
+    ("on_marketplace", "BOOLEAN DEFAULT 0"),
+]
+_SALE_COLUMNS_TO_ADD = [
+    ("platform", "VARCHAR(32)"),
+]
+
+
+def _ensure_columns(engine: Engine, table: str, columns: list[tuple[str, str]]) -> None:
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+        for name, ddl in columns:
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
 def init_db():
     Base.metadata.create_all(engine)
+    _ensure_columns(engine, "books", _BOOK_COLUMNS_TO_ADD)
+    _ensure_columns(engine, "sales", _SALE_COLUMNS_TO_ADD)
 
 def sync_pending_books(grouped_dir: str | Path) -> int:
     """

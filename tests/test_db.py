@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import sessionmaker
 
 from blt import db
-from blt.models import Book
+from blt.models import Book, Sale
 
 
 def _make_book_folders(base: Path, names):
@@ -104,3 +105,66 @@ def test_portuguese_characters_survive_a_real_roundtrip(temp_db):
         b = s.execute(select(Book)).scalar_one()
         assert b.title == title
         assert b.description == description
+
+
+def test_init_db_adds_missing_platform_columns_to_an_existing_database(tmp_path, monkeypatch):
+    """
+    Base.metadata.create_all only creates missing tables, not missing columns
+    on tables that already exist - so a real blt.db upgraded from before the
+    on_vinted/on_olx/on_marketplace/platform columns existed must get them
+    added in place by init_db(), without losing any existing row's data.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'old_schema.db'}", future=True)
+    with engine.begin() as conn:
+        # Mirrors the real pre-platform-tracking schema: every column that
+        # already shipped, just missing the new ones this migration adds.
+        conn.execute(text(
+            "CREATE TABLE books (id INTEGER PRIMARY KEY, title VARCHAR(255), author VARCHAR(255), "
+            "isbn VARCHAR(32), description TEXT, price FLOAT, quantity INTEGER, status VARCHAR(32), "
+            "folder_path VARCHAR(512) UNIQUE, created_at DATETIME, updated_at DATETIME, skipped_at DATETIME)"
+        ))
+        conn.execute(text(
+            "INSERT INTO books (title, folder_path, status, quantity, price) "
+            "VALUES ('Old Book', 'book_x', 'available', 3, 7.5)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE sales (id INTEGER PRIMARY KEY, book_id INTEGER, title VARCHAR(255), "
+            "isbn VARCHAR(32), price FLOAT, sold_at DATETIME)"
+        ))
+        conn.execute(text("INSERT INTO sales (book_id, title, isbn, price) VALUES (1, 'Old Sale', '123', 7.5)"))
+
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(db, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False, future=True))
+
+    db.init_db()
+
+    with engine.connect() as conn:
+        book_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(books)"))}
+        sale_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(sales)"))}
+    assert {"on_vinted", "on_olx", "on_marketplace"} <= book_cols
+    assert "platform" in sale_cols
+
+    with db.SessionLocal() as s:
+        book = s.execute(select(Book)).scalar_one()
+        assert book.title == "Old Book"  # untouched by the migration
+        assert book.quantity == 3
+        assert book.on_vinted is True  # existing rows default to Vinted-only, matching prior reality
+        assert book.on_olx is False
+        assert book.on_marketplace is False
+
+        sale = s.execute(select(Sale)).scalar_one()
+        assert sale.title == "Old Sale"  # untouched
+        assert sale.platform is None
+
+
+def test_init_db_is_idempotent_on_an_already_upgraded_database(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}", future=True)
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(db, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False, future=True))
+
+    db.init_db()
+    db.init_db()  # must not error or duplicate columns on a second call
+
+    with engine.connect() as conn:
+        book_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(books)"))]
+    assert book_cols.count("on_vinted") == 1
