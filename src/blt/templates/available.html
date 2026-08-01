@@ -91,7 +91,9 @@
   .price-stepper button:hover { color: var(--green-dark); border-color: var(--green); }
 
   .platform-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
     background: #eef1f4;
     color: var(--muted);
     border-radius: 4px;
@@ -100,7 +102,8 @@
     margin: 0.1rem 0.2rem 0.1rem 0;
     white-space: nowrap;
   }
-  .platform-checks { display: flex; gap: 1rem; }
+  .platform-icon { width: 12px; height: 12px; }
+  .platform-checks { display: flex; gap: 1rem; flex-wrap: wrap; }
   .platform-checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; font-weight: 400; }
   .sold-form { display: flex; gap: 0.4rem; align-items: center; }
   .sold-form select {
@@ -208,9 +211,12 @@
       <td>{{ book.author or "-" }}</td>
       <td>{{ book.isbn or "-" }}</td>
       <td>
-        {% if book.on_vinted %}<span class="platform-badge">Vinted</span>{% endif %}
-        {% if book.on_olx %}<span class="platform-badge">OLX</span>{% endif %}
-        {% if book.on_marketplace %}<span class="platform-badge">Marketplace</span>{% endif %}
+        {% for bp in book.platforms %}
+        {% set p = platform_by_slug.get(bp.platform) %}
+        <span class="platform-badge">
+          {% if p %}<img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">{{ p.name }}{% else %}{{ bp.platform }}{% endif %}
+        </span>
+        {% endfor %}
       </td>
       <td>{{ "%.2f"|format(book.price) if book.price is not none else "-" }} €</td>
       <td>{{ book.quantity }}</td>
@@ -218,13 +224,13 @@
         {% if book.status == "sold_out" %}
           <span class="sold-out-label">Esgotado</span>
         {% else %}
-          {% set platform_count = book.on_vinted|int + book.on_olx|int + book.on_marketplace|int %}
           <form method="post" action="/sold/{{ book.id }}" class="sold-form">
-            {% if platform_count > 1 %}
+            {% if book.platforms|length > 1 %}
             <select name="platform" aria-label="Plataforma da venda">
-              {% if book.on_vinted %}<option value="vinted">Vinted</option>{% endif %}
-              {% if book.on_olx %}<option value="olx">OLX</option>{% endif %}
-              {% if book.on_marketplace %}<option value="marketplace">Marketplace</option>{% endif %}
+              {% for bp in book.platforms %}
+              {% set p = platform_by_slug.get(bp.platform) %}
+              <option value="{{ bp.platform }}">{{ p.name if p else bp.platform }}</option>
+              {% endfor %}
             </select>
             {% endif %}
             <button type="submit" class="sold">Marcar 1 vendido</button>
@@ -276,9 +282,14 @@
           <div class="edit-field platforms-field">
             <label>Plataformas</label>
             <div class="platform-checks">
-              <label><input type="checkbox" name="on_vinted" value="1" {{ 'checked' if book.on_vinted }} onchange="markDirty({{ book.id }})"> Vinted</label>
-              <label><input type="checkbox" name="on_olx" value="1" {{ 'checked' if book.on_olx }} onchange="markDirty({{ book.id }})"> OLX</label>
-              <label><input type="checkbox" name="on_marketplace" value="1" {{ 'checked' if book.on_marketplace }} onchange="markDirty({{ book.id }})"> Marketplace</label>
+              {% set book_platform_slugs = book.platforms|map(attribute='platform')|list %}
+              {% for p in platforms %}
+              <label>
+                <input type="checkbox" name="platforms" value="{{ p.slug }}" {{ 'checked' if p.slug in book_platform_slugs }} onchange="markDirty({{ book.id }})">
+                <img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">
+                {{ p.name }}
+              </label>
+              {% endfor %}
             </div>
           </div>
           <div class="edit-actions">

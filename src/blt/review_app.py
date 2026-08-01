@@ -17,14 +17,15 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 
 from . import db, discord_notify, group_photos
 from .config import settings
 from .extract import _extract_with_dev_cache, extract_book_fields, extract_pending_books
 from .images import IMG_EXTS, load_image_any
 from .listing import compose_listing
-from .models import Book, Sale
+from .models import Book, BookPlatform, Sale
+from .platforms import load_platforms
 
 _HEIC_EXTS = {".heic", ".heif"}
 _SAFE_ORIGIN_HOSTS = {"localhost", "127.0.0.1"}
@@ -99,6 +100,40 @@ def _find_isbn_duplicate(s, book: Book) -> Book | None:
     return s.execute(
         select(Book).where(Book.isbn == book.isbn, Book.id != book.id, Book.status.in_(_STOCKED_STATUSES))
     ).scalars().first()
+
+
+def _known_platform_slugs() -> set[str]:
+    return {p.slug for p in load_platforms()}
+
+
+def _add_platforms(s, book_id: int, slugs: set[str]) -> None:
+    """Adds a BookPlatform row for each slug not already present on this
+    book - never removes one, so cross-posting later adds a platform rather
+    than replacing the ones already there (used by /next's duplicate-merge)."""
+    if not slugs:
+        return
+    existing = {
+        row[0] for row in s.execute(select(BookPlatform.platform).where(BookPlatform.book_id == book_id))
+    }
+    for slug in slugs - existing:
+        s.add(BookPlatform(book_id=book_id, platform=slug))
+
+
+def _replace_platforms(s, book_id: int, slugs: set[str]) -> None:
+    """Full overwrite: the book ends up flagged on exactly these platforms,
+    used by /stock/edit's direct in-place edit rather than a merge."""
+    s.execute(delete(BookPlatform).where(BookPlatform.book_id == book_id))
+    for slug in slugs:
+        s.add(BookPlatform(book_id=book_id, platform=slug))
+
+
+def _review_platform_context(book: Book | None) -> dict:
+    platforms = load_platforms()
+    if book is not None and book.platforms:
+        checked = {bp.platform for bp in book.platforms}
+    else:
+        checked = {p.slug for p in platforms if p.default}
+    return {"platforms": platforms, "checked_platform_slugs": checked}
 
 
 def _classify_review_book(s, book: Book) -> str:
@@ -490,8 +525,9 @@ def review_form(request: Request):
         return templates.TemplateResponse(
             request,
             "review.html",
-            {**ctx, **breakdown, "active_step": "review", "book": book, "remaining": ctx["review_count"],
-             "is_previous": False, "dev_mode": settings.DEV_MODE, "duplicate_book": duplicate_book},
+            {**ctx, **breakdown, **_review_platform_context(book), "active_step": "review", "book": book,
+             "remaining": ctx["review_count"], "is_previous": False, "dev_mode": settings.DEV_MODE,
+             "duplicate_book": duplicate_book},
         )
 
 
@@ -504,13 +540,9 @@ def submit_next(
     description: str = Form(""),
     price: float = Form(...),
     quantity: int = Form(1),
-    on_vinted: str | None = Form(None),
-    on_olx: str | None = Form(None),
-    on_marketplace: str | None = Form(None),
+    platforms: list[str] | None = Form(None),
 ):
-    on_vinted_flag = on_vinted is not None
-    on_olx_flag = on_olx is not None
-    on_marketplace_flag = on_marketplace is not None
+    checked = set(platforms or []) & _known_platform_slugs()
 
     with db.SessionLocal() as s:
         book = s.get(Book, book_id)
@@ -522,17 +554,15 @@ def submit_next(
         if existing is not None:
             # Same ISBN already stocked - fold this pending copy into that
             # listing (bump its quantity, refresh its fields) instead of
-            # creating a second entry for the same book. Platform flags are
-            # OR'd in rather than overwritten - if this copy is going on OLX
-            # too, the existing listing is now on OLX too, not "just OLX".
+            # creating a second entry for the same book. Platforms are added
+            # rather than overwritten - if this copy is going on OLX too,
+            # the existing listing is now on OLX too, not "just OLX".
             existing.title = title or None
             existing.author = author or None
             existing.description = description or None
             existing.price = price
             existing.quantity = existing.quantity + quantity
-            existing.on_vinted = existing.on_vinted or on_vinted_flag
-            existing.on_olx = existing.on_olx or on_olx_flag
-            existing.on_marketplace = existing.on_marketplace or on_marketplace_flag
+            _add_platforms(s, existing.id, checked)
             existing.status = "available"
             s.delete(book)
             s.commit()
@@ -543,9 +573,7 @@ def submit_next(
         book.description = description or None
         book.price = price
         book.quantity = quantity
-        book.on_vinted = on_vinted_flag
-        book.on_olx = on_olx_flag
-        book.on_marketplace = on_marketplace_flag
+        _add_platforms(s, book.id, checked)
         if settings.DEV_MODE:
             # Nothing is ever consumed in DEV_MODE, so "next" means the same
             # thing as a skip: push this book behind the rest of the queue
@@ -652,7 +680,7 @@ def previous_book(request: Request):
         return templates.TemplateResponse(
             request,
             "review.html",
-            {**ctx, "active_step": "review", "book": book, "remaining": None,
+            {**ctx, **_review_platform_context(book), "active_step": "review", "book": book, "remaining": None,
              "is_previous": True, "dev_mode": settings.DEV_MODE, "duplicate_book": duplicate_book},
         )
 
@@ -711,6 +739,7 @@ def stock_list(
 
         ctx = _sidebar_counts(s)
         breakdown = _stock_breakdown(s)
+        platforms = load_platforms()
         return templates.TemplateResponse(request, "available.html", {
             **ctx,
             **breakdown,
@@ -725,6 +754,8 @@ def stock_list(
             "available_count": available_count,
             "sold_out_count": total - available_count,
             "total_pages": total_pages,
+            "platforms": platforms,
+            "platform_by_slug": {p.slug: p for p in platforms},
         })
 
 
@@ -739,14 +770,7 @@ def notify_discord_stock():
 
 
 def _book_platform_codes(book: Book) -> list[str]:
-    codes = []
-    if book.on_vinted:
-        codes.append("vinted")
-    if book.on_olx:
-        codes.append("olx")
-    if book.on_marketplace:
-        codes.append("marketplace")
-    return codes
+    return [bp.platform for bp in book.platforms]
 
 
 @app.post("/sold/{book_id}")
@@ -780,10 +804,10 @@ def update_book_in_stock(
     isbn: str = Form(""),
     price: float = Form(...),
     quantity: int = Form(1),
-    on_vinted: str | None = Form(None),
-    on_olx: str | None = Form(None),
-    on_marketplace: str | None = Form(None),
+    platforms: list[str] | None = Form(None),
 ):
+    checked = set(platforms or []) & _known_platform_slugs()
+
     with db.SessionLocal() as s:
         book = s.get(Book, book_id)
         if book is None:
@@ -793,9 +817,7 @@ def update_book_in_stock(
         book.isbn = isbn or None
         book.price = price
         book.quantity = quantity
-        book.on_vinted = on_vinted is not None
-        book.on_olx = on_olx is not None
-        book.on_marketplace = on_marketplace is not None
+        _replace_platforms(s, book.id, checked)
         book.status = "sold_out" if quantity <= 0 else "available"
         s.commit()
     return RedirectResponse("/stock", status_code=303)

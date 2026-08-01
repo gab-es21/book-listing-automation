@@ -62,6 +62,12 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
 
+[tool.ruff.lint.flake8-bugbear]
+# B008 otherwise flags Form(...)/Depends(...) defaults typed as list[...] -
+# these are FastAPI dependency markers evaluated once at declaration time,
+# not mutated shared state, regardless of the annotated type.
+extend-immutable-calls = ["fastapi.Form", "fastapi.Depends"]
+
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true

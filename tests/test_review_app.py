@@ -6,7 +6,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from blt import review_app
-from blt.models import Book, Sale
+from blt.models import Book, BookPlatform, Sale
 from blt.review_app import app
 
 client = TestClient(app)
@@ -19,8 +19,11 @@ def _boom_if_called(*args, **kwargs):
 def _add_book(temp_db, **kwargs):
     kwargs.setdefault("folder_path", "book_x")
     kwargs.setdefault("status", "pending")
+    platform_slugs = kwargs.pop("platforms", None)
     with temp_db() as s:
         book = Book(**kwargs)
+        if platform_slugs is not None:
+            book.platforms = [BookPlatform(platform=slug) for slug in platform_slugs]
         s.add(book)
         s.commit()
         s.refresh(book)
@@ -424,9 +427,14 @@ def test_review_form_shows_platform_checkboxes_vinted_checked_by_default(temp_db
 
     r = client.get("/review")
 
-    assert '<input type="checkbox" name="on_vinted" value="1" checked> Vinted' in r.text
-    assert '<input type="checkbox" name="on_olx" value="1"> OLX' in r.text
-    assert '<input type="checkbox" name="on_marketplace" value="1"> Marketplace' in r.text
+    assert 'name="platforms" value="vinted" checked' in r.text
+    assert 'name="platforms" value="olx"' in r.text
+    assert 'name="platforms" value="marketplace"' in r.text
+    assert '"olx" checked' not in r.text
+    assert '"marketplace" checked' not in r.text
+    assert "Vinted" in r.text
+    assert "OLX" in r.text
+    assert "Marketplace" in r.text
 
 
 def test_review_form_shows_duplicate_warning_when_isbn_already_stocked(temp_db):
@@ -514,26 +522,36 @@ def test_post_next_saves_checked_platform_flags(temp_db):
     client.post(
         "/next",
         data={"book_id": book_id, "title": "T", "price": "7.0", "quantity": "1",
-              "on_vinted": "1", "on_marketplace": "1"},
+              "platforms": ["vinted", "marketplace"]},
     )
 
     with temp_db() as s:
         book = s.get(Book, book_id)
-        assert book.on_vinted is True
-        assert book.on_olx is False
-        assert book.on_marketplace is True
+        assert {bp.platform for bp in book.platforms} == {"vinted", "marketplace"}
 
 
-def test_post_next_with_no_platform_checkboxes_saves_all_false(temp_db):
+def test_post_next_with_no_platform_checkboxes_saves_none(temp_db):
     book_id = _add_book(temp_db, folder_path="book_no_platforms", title="Old", price=7.0)
 
     client.post("/next", data={"book_id": book_id, "title": "T", "price": "7.0", "quantity": "1"})
 
     with temp_db() as s:
         book = s.get(Book, book_id)
-        assert book.on_vinted is False
-        assert book.on_olx is False
-        assert book.on_marketplace is False
+        assert book.platforms == []
+
+
+def test_post_next_ignores_a_platform_slug_not_in_the_config(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_bogus_platform", title="Old", price=7.0)
+
+    client.post(
+        "/next",
+        data={"book_id": book_id, "title": "T", "price": "7.0", "quantity": "1",
+              "platforms": ["vinted", "not_a_real_platform"]},
+    )
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert {bp.platform for bp in book.platforms} == {"vinted"}
 
 
 def test_post_next_merges_into_existing_book_with_same_isbn(temp_db):
@@ -567,10 +585,10 @@ def test_post_next_merges_into_existing_book_with_same_isbn(temp_db):
         assert s.get(Book, pending_id) is None  # folded into the existing row, not kept as a second entry
 
 
-def test_post_next_merge_ors_platform_flags_into_existing(temp_db):
+def test_post_next_merge_adds_platforms_into_existing_without_removing_any(temp_db):
     existing_id = _add_book(
         temp_db, folder_path="book_existing_platform", status="available", title="Old",
-        isbn="9789896689704", quantity=2, price=7.0, on_vinted=True, on_olx=False, on_marketplace=False,
+        isbn="9789896689704", quantity=2, price=7.0, platforms=["vinted"],
     )
     pending_id = _add_book(
         temp_db, folder_path="book_pending_platform", status="pending", title="Old",
@@ -580,16 +598,14 @@ def test_post_next_merge_ors_platform_flags_into_existing(temp_db):
     client.post(
         "/next",
         data={"book_id": pending_id, "title": "Old", "isbn": "9789896689704", "price": "7.0", "quantity": "1",
-              "on_olx": "1"},
+              "platforms": ["olx"]},
     )
 
     with temp_db() as s:
         existing = s.get(Book, existing_id)
-        # Vinted flag (already true) is preserved, OLX (newly submitted) is added -
+        # Vinted (already there) is preserved, OLX (newly submitted) is added -
         # cross-posting adds a platform, it never removes one this copy didn't mention.
-        assert existing.on_vinted is True
-        assert existing.on_olx is True
-        assert existing.on_marketplace is False
+        assert {bp.platform for bp in existing.platforms} == {"vinted", "olx"}
 
 
 def test_post_next_merge_reactivates_a_sold_out_book(temp_db):
@@ -1083,44 +1099,47 @@ def test_stock_edit_price_field_uses_whole_euro_stepper_not_native_spin(temp_db)
 def test_stock_shows_platform_badges_for_flagged_platforms_only(temp_db):
     _add_book(
         temp_db, folder_path="book_badges", title="Cross Posted", status="available",
-        on_vinted=True, on_olx=True, on_marketplace=False,
+        platforms=["vinted", "olx"],
     )
 
     r = client.get("/stock", params={"q": "Cross Posted"})
 
-    assert '<span class="platform-badge">Vinted</span>' in r.text
-    assert '<span class="platform-badge">OLX</span>' in r.text
-    assert '<span class="platform-badge">Marketplace</span>' not in r.text
+    # Each name appears once in the edit-row checkboxes regardless of state
+    # (all 3 configured platforms are always offered there) - a flagged
+    # platform adds two more occurrences (badge + sold-form <select> option,
+    # since this book has 2 platforms flagged), an unflagged one doesn't.
+    assert r.text.count("Vinted") == 3
+    assert r.text.count("OLX") == 3
+    assert r.text.count("Marketplace") == 1
 
 
 def test_stock_edit_row_checkboxes_reflect_current_platform_state(temp_db):
-    book_id = _add_book(
+    _add_book(
         temp_db, folder_path="book_edit_platforms", title="Only OLX", status="available",
-        on_vinted=False, on_olx=True, on_marketplace=False,
+        platforms=["olx"],
     )
 
     r = client.get("/stock", params={"q": "Only OLX"})
 
-    assert f'<input type="checkbox" name="on_vinted" value="1"  onchange="markDirty({book_id})">' in r.text
-    assert f'<input type="checkbox" name="on_olx" value="1" checked onchange="markDirty({book_id})">' in r.text
-    assert f'<input type="checkbox" name="on_marketplace" value="1"  onchange="markDirty({book_id})">' in r.text
+    assert 'name="platforms" value="olx" checked' in r.text
+    assert '"vinted" checked' not in r.text
+    assert '"marketplace" checked' not in r.text
 
 
 def test_stock_edit_saves_platform_flags(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_edit_save_platforms", title="T", status="available", price=7.0,
-        on_vinted=True, on_olx=False, on_marketplace=False,
+        platforms=["vinted"],
     )
 
     client.post(f"/stock/edit/{book_id}", data={
-        "title": "T", "price": "7.0", "quantity": "1", "on_marketplace": "1",
+        "title": "T", "price": "7.0", "quantity": "1", "platforms": ["marketplace"],
     })
 
     with temp_db() as s:
         book = s.get(Book, book_id)
-        assert book.on_vinted is False  # edit overwrites, doesn't merge like /next does
-        assert book.on_olx is False
-        assert book.on_marketplace is True
+        # edit overwrites, doesn't merge like /next does
+        assert {bp.platform for bp in book.platforms} == {"marketplace"}
 
 
 def test_stock_search_matches_title_isbn_or_author(temp_db):
@@ -1290,7 +1309,7 @@ def test_mark_sold_records_a_sale_snapshot(temp_db):
 def test_sold_form_has_no_platform_select_when_only_one_platform_flagged(temp_db):
     _add_book(
         temp_db, folder_path="book_single_platform", title="Solo Listing", status="available",
-        on_vinted=True, on_olx=False, on_marketplace=False,
+        platforms=["vinted"],
     )
 
     r = client.get("/stock", params={"q": "Solo Listing"})
@@ -1301,7 +1320,7 @@ def test_sold_form_has_no_platform_select_when_only_one_platform_flagged(temp_db
 def test_sold_form_shows_platform_select_when_multiple_platforms_flagged(temp_db):
     _add_book(
         temp_db, folder_path="book_multi_platform", title="Cross Listing", status="available",
-        on_vinted=True, on_olx=True, on_marketplace=False,
+        platforms=["vinted", "olx"],
     )
 
     r = client.get("/stock", params={"q": "Cross Listing"})
@@ -1315,7 +1334,7 @@ def test_sold_form_shows_platform_select_when_multiple_platforms_flagged(temp_db
 def test_mark_sold_on_single_platform_book_auto_records_platform(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_sale_single", status="available", quantity=1, title="Solo", price=7.0,
-        on_vinted=True, on_olx=False, on_marketplace=False,
+        platforms=["vinted"],
     )
 
     client.post(f"/sold/{book_id}")  # no platform field sent at all - matches the real form for this case
@@ -1328,7 +1347,7 @@ def test_mark_sold_on_single_platform_book_auto_records_platform(temp_db):
 def test_mark_sold_on_multi_platform_book_records_the_chosen_platform(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_sale_multi", status="available", quantity=1, title="Multi", price=7.0,
-        on_vinted=True, on_olx=True, on_marketplace=False,
+        platforms=["vinted", "olx"],
     )
 
     client.post(f"/sold/{book_id}", data={"platform": "olx"})
@@ -1341,7 +1360,7 @@ def test_mark_sold_on_multi_platform_book_records_the_chosen_platform(temp_db):
 def test_mark_sold_on_multi_platform_book_ignores_a_platform_it_was_never_posted_on(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_sale_bogus", status="available", quantity=1, title="Multi", price=7.0,
-        on_vinted=True, on_olx=True, on_marketplace=False,
+        platforms=["vinted", "olx"],
     )
 
     client.post(f"/sold/{book_id}", data={"platform": "marketplace"})
@@ -1354,7 +1373,6 @@ def test_mark_sold_on_multi_platform_book_ignores_a_platform_it_was_never_posted
 def test_mark_sold_with_no_platform_flagged_records_none(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_sale_none", status="available", quantity=1, title="Nowhere", price=7.0,
-        on_vinted=False, on_olx=False, on_marketplace=False,
     )
 
     client.post(f"/sold/{book_id}")

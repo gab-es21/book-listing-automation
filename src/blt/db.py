@@ -17,14 +17,12 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 # (real inventory data) to a schema with new columns needs an explicit,
 # additive ALTER TABLE step. Existing rows keep all their other data; the
 # new column is simply backfilled with its default for them.
-_BOOK_COLUMNS_TO_ADD = [
-    ("on_vinted", "BOOLEAN DEFAULT 1"),
-    ("on_olx", "BOOLEAN DEFAULT 0"),
-    ("on_marketplace", "BOOLEAN DEFAULT 0"),
-]
 _SALE_COLUMNS_TO_ADD = [
     ("platform", "VARCHAR(32)"),
 ]
+
+# books briefly had these instead of the book_platforms join table.
+_BOOLEAN_PLATFORM_COLUMNS = (("vinted", "on_vinted"), ("olx", "on_olx"), ("marketplace", "on_marketplace"))
 
 
 def _ensure_columns(engine: Engine, table: str, columns: list[tuple[str, str]]) -> None:
@@ -35,10 +33,33 @@ def _ensure_columns(engine: Engine, table: str, columns: list[tuple[str, str]]) 
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
+def _migrate_book_platforms_from_booleans(engine: Engine) -> None:
+    """
+    books briefly had on_vinted/on_olx/on_marketplace boolean columns,
+    superseded by the book_platforms join table so the set of marketplaces
+    can grow via platforms.json without a schema change. Upgrades a database
+    still on that intermediate shape: backfills book_platforms from the
+    booleans, then drops them. A no-op on a fresh database (nothing to
+    backfill) or one already upgraded (columns already gone) - requires
+    book_platforms to already exist, so must run after create_all.
+    """
+    with engine.begin() as conn:
+        book_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(books)"))}
+        if "on_vinted" not in book_cols:
+            return
+        for slug, column in _BOOLEAN_PLATFORM_COLUMNS:
+            conn.execute(
+                text(f"INSERT INTO book_platforms (book_id, platform) SELECT id, :slug FROM books WHERE {column} = 1"),
+                {"slug": slug},
+            )
+        for _, column in _BOOLEAN_PLATFORM_COLUMNS:
+            conn.execute(text(f"ALTER TABLE books DROP COLUMN {column}"))
+
+
 def init_db():
     Base.metadata.create_all(engine)
-    _ensure_columns(engine, "books", _BOOK_COLUMNS_TO_ADD)
     _ensure_columns(engine, "sales", _SALE_COLUMNS_TO_ADD)
+    _migrate_book_platforms_from_booleans(engine)
 
 def sync_pending_books(grouped_dir: str | Path) -> int:
     """
