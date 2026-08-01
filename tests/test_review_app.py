@@ -1006,6 +1006,17 @@ def test_stock_list_shows_available_books(temp_db):
     assert ">3<" in r.text
 
 
+def test_stock_edit_price_field_uses_whole_euro_stepper_not_native_spin(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", price=6.0)
+
+    r = client.get("/stock")
+
+    assert r.status_code == 200
+    assert f'class="no-native-spin" name="price" id="edit-price-{book_id}"' in r.text
+    assert f'onclick="stepPrice({book_id}, 1)"' in r.text
+    assert f'onclick="stepPrice({book_id}, -1)"' in r.text
+
+
 def test_stock_search_matches_title_isbn_or_author(temp_db):
     _add_book(temp_db, folder_path="a", status="available", title="Sempre Tu", isbn="111", author="Colleen Hoover")
     _add_book(temp_db, folder_path="b", status="available", title="Outro Livro", isbn="9789896689704", author="Autor B")

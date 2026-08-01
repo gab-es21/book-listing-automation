@@ -60,6 +60,36 @@
   .edit-field.price-field input, .edit-field.quantity-field input { width: 6rem; }
   .edit-actions { display: flex; gap: 0.5rem; }
 
+  /* Native number-input spin buttons round to a whole unit on some
+     browser/OS combinations even with step="0.01" set - hidden here and
+     replaced with our own buttons that call stepUp()/stepDown() directly,
+     which are spec-guaranteed to honor the element's step attribute. */
+  input.no-native-spin::-webkit-inner-spin-button,
+  input.no-native-spin::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input.no-native-spin { -moz-appearance: textfield; }
+  .price-input-row { display: flex; }
+  .price-stepper { display: flex; flex-direction: column; flex: 0 0 auto; }
+  .price-stepper button {
+    background: #fff;
+    border: 1px solid var(--border);
+    width: 1.7rem;
+    height: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    font-size: 0.6rem;
+    color: var(--muted);
+  }
+  .price-stepper button:first-child { border-radius: 6px 6px 0 0; border-bottom: none; }
+  .price-stepper button:last-child { border-radius: 0 0 6px 6px; }
+  .price-stepper button:hover { color: var(--green-dark); border-color: var(--green); }
+
   tr.sold-out { background: #fff1f0; color: #9a6a6a; }
   .sold-out-label { color: #c92a2a; font-weight: 600; font-size: 0.85rem; }
 
@@ -197,7 +227,13 @@
           </div>
           <div class="edit-field price-field">
             <label for="edit-price-{{ book.id }}">Preço (€)</label>
-            <input type="number" step="0.01" name="price" id="edit-price-{{ book.id }}" value="{{ book.price if book.price is not none else '' }}" oninput="markDirty({{ book.id }})">
+            <div class="price-input-row">
+              <input type="number" step="0.01" min="0" class="no-native-spin" name="price" id="edit-price-{{ book.id }}" value="{{ book.price if book.price is not none else '' }}" oninput="markDirty({{ book.id }})">
+              <div class="price-stepper">
+                <button type="button" onclick="stepPrice({{ book.id }}, 1)" aria-label="Aumentar 1 euro" tabindex="-1">▲</button>
+                <button type="button" onclick="stepPrice({{ book.id }}, -1)" aria-label="Diminuir 1 euro" tabindex="-1">▼</button>
+              </div>
+            </div>
           </div>
           <div class="edit-field quantity-field">
             <label for="edit-quantity-{{ book.id }}">Quantidade</label>
@@ -243,6 +279,14 @@ function toggleEdit(id) {
 function markDirty(id) {
   document.getElementById("save-btn-" + id).disabled = false;
   document.getElementById("discard-btn-" + id).disabled = false;
+}
+function stepPrice(id, direction) {
+  // Moves by a whole euro per click (100 steps of the input's step="0.01").
+  // stepUp()/stepDown() don't fire an "input" event, so markDirty is called
+  // explicitly to enable Guardar/Descartar the same way typing does.
+  const el = document.getElementById("edit-price-" + id);
+  if (direction > 0) { el.stepUp(100); } else { el.stepDown(100); }
+  markDirty(id);
 }
 function showStockTab(tab, btn) {
   document.getElementById("stock-tab-status").style.display = tab === "status" ? "" : "none";
