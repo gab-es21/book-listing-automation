@@ -40,6 +40,22 @@ def extract(limit: int = typer.Option(None, help="Limite de livros a processar (
     result = extract_pending_books(limit=limit)
     print(f"[green]{result['resolved']} resolvido(s), {result['failed']} marcado(s) como failed.[/green]")
 
+@app.command("fetch-discord-photos")
+def fetch_discord_photos():
+    """Descarrega fotos novas do canal Discord dedicado para RAW_DIR (alternativa mais rápida ao cabo USB)."""
+    from .discord_fetch import DiscordFetchError, fetch_new_photos
+    try:
+        result = fetch_new_photos()
+    except DiscordFetchError as e:
+        print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    print(f"[green]{result['downloaded']} foto(s) descarregada(s) para {settings.RAW_DIR}/.[/green]")
+    if result["delete_failures"]:
+        print(
+            f"[yellow]{result['delete_failures']} mensagem(ns) não foram apagadas do Discord - "
+            "vão ser tentadas de novo na próxima vez.[/yellow]"
+        )
+
 @app.command()
 def review(host: str = "127.0.0.1", port: int = 8000):
     """Abre a página local de revisão (copy-paste para o Vinted)."""

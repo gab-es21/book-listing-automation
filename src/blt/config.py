@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # /review e /stock. Vazio desativa-os (não é obrigatório).
     DISCORD_WEBHOOK_URL: str = ""
 
+    # Bot token + ID de um canal Discord DEDICADO só para receber fotos raw
+    # (nunca o mesmo canal do DISCORD_WEBHOOK_URL acima - senão o bot tentaria
+    # reimportar as próprias fotos que ele mesmo publicou). Usados por
+    # `blt fetch-discord-photos`; vazios desativa o comando (não é obrigatório).
+    DISCORD_BOT_TOKEN: str = ""
+    DISCORD_PHOTOS_CHANNEL_ID: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()
