@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -32,12 +32,22 @@ class Book(Base):
     skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     # Which marketplace(s) this listing is currently posted on - independent
     # of status/quantity, since the same physical stock can be cross-posted
-    # to several places at once. Vinted defaults on since it's been the only
-    # platform historically; existing rows get this same default on upgrade
-    # (see db._ensure_platform_columns).
-    on_vinted: Mapped[bool] = mapped_column(Boolean, default=True)
-    on_olx: Mapped[bool] = mapped_column(Boolean, default=False)
-    on_marketplace: Mapped[bool] = mapped_column(Boolean, default=False)
+    # to several places at once. The set of possible platforms is config-driven
+    # (see blt.platforms.load_platforms), so this is a join table rather than
+    # one column per platform.
+    platforms: Mapped[list["BookPlatform"]] = relationship(cascade="all, delete-orphan")
+
+
+# One row per (book, platform) the book is currently posted on. A plain slug
+# string rather than a foreign key to a platforms table, since the available
+# platforms live in platforms.json, not the database - matches how Sale.platform
+# below is also just a snapshot string, not a join.
+class BookPlatform(Base):
+    __tablename__ = "book_platforms"
+    __table_args__ = (UniqueConstraint("book_id", "platform"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"))
+    platform: Mapped[str] = mapped_column(String(32))
 
 
 # One row per physical copy sold - snapshots title/isbn/price at the moment
