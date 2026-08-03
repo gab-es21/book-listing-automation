@@ -12,9 +12,17 @@
     --muted: #6a737d;
     --bg: #f6f8fa;
     --orange: #e8590c;
-    --step-raw: #2a78d6;
-    --step-sorted: #eb6834;
-    --step-review: #1baf7a;
+    /* Pipeline colors carry real meaning, reused from where the same meaning
+       already exists elsewhere in the app rather than picked freestanding:
+       raw = just landed, not yet organized (violet), sorted = queued for
+       automated extraction (blue, "working on it"), review = needs your
+       attention (amber - the same hue review.html's own queue breakdown
+       already uses for "Repetido"/duplicate), stock = done (var(--green),
+       the same green available.html's "Disponível" and review.html's
+       "Pronto" already use for "good"). */
+    --step-raw: #4a3aa7;
+    --step-sorted: #2a78d6;
+    --step-review: #eda100;
     --step-stock: #eda100;
   }
   * { box-sizing: border-box; }
@@ -221,14 +229,14 @@
         <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_units_display }} ({{ raw_pct }}%)"></a>
         <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_count }} ({{ sorted_pct }}%)"></a>
         <a href="/review" style="width: {{ review_pct }}%; background: var(--step-review);" title="Por confirmar: {{ review_count }} ({{ review_pct }}%)"></a>
-        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--step-stock);" title="Stock: {{ stock_count }} ({{ stock_pct }}%)"></a>
+        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--green);" title="Stock: {{ stock_count }} ({{ stock_pct }}%)"></a>
         {% if unit_pct %}<div class="progress-ticks" style="background-size: {{ unit_pct }}% 100%;"></div>{% endif %}
       </div>
       <div class="progress-legend">
         <a href="/raw"><i style="background: var(--step-raw)"></i>Raw {{ raw_pct }}%</a>
         <a href="/sorted"><i style="background: var(--step-sorted)"></i>Ordenadas {{ sorted_pct }}%</a>
         <a href="/review"><i style="background: var(--step-review)"></i>Por confirmar {{ review_pct }}%</a>
-        <a href="/stock"><i style="background: var(--step-stock)"></i>Stock {{ stock_pct }}%</a>
+        <a href="/stock"><i style="background: var(--green)"></i>Stock {{ stock_pct }}%</a>
       </div>
     </div>
     {% block content %}{% endblock %}
