@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, case, delete, func, or_, select
 
-from . import db, discord_notify, group_photos
+from . import db, discord_fetch, discord_notify, group_photos
 from .config import settings
 from .extract import _extract_with_dev_cache, extract_book_fields, extract_pending_books
 from .images import IMG_EXTS, load_image_any
@@ -484,6 +484,15 @@ def confirm_one_pair(photo_a: str = Form(...), photo_b: str = Form(...), swap: s
     group_photos.commit_pair(cover, isbn)
     db.sync_pending_books(settings.GROUPED_DIR)
     return RedirectResponse("/raw", status_code=303)
+
+
+@app.post("/raw/fetch-discord")
+def fetch_discord_photos_route():
+    try:
+        result = discord_fetch.fetch_new_photos()
+    except discord_fetch.DiscordFetchError as e:
+        return {"fetched": False, "error": str(e)}
+    return {"fetched": True, "downloaded": result["downloaded"], "delete_failures": result["delete_failures"]}
 
 
 # -------- Sorted images --------
