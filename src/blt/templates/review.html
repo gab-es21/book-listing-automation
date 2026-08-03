@@ -126,7 +126,7 @@
   }
   button.warning:hover { background: #c98600; }
   button.info {
-    background: var(--step-raw);
+    background: #2a78d6;
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -189,10 +189,17 @@
   }
   .bulk-progress-bar > div {
     height: 100%;
-    background: var(--step-review);
+    background: var(--green);
     transition: width 0.4s ease;
     width: 0%;
   }
+
+  /* Criar (a fresh listing) is a deliberate exception to /review's amber
+     page accent - stays green like every other "safe to click, all good"
+     action in the app. Adicionar (merging into an existing duplicate) is
+     unaffected, it already renders as button.warning, not button.primary. */
+  button.primary { background: var(--green); }
+  button.primary:hover { background: var(--green-dark); }
 {% endblock %}
 {% block content %}
 {% if not is_previous %}

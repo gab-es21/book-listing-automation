@@ -12,11 +12,27 @@
     --muted: #6a737d;
     --bg: #f6f8fa;
     --orange: #e8590c;
-    --step-raw: #2a78d6;
-    --step-sorted: #eb6834;
-    --step-review: #1baf7a;
+    /* Pipeline colors carry real meaning, reused from where the same meaning
+       already exists elsewhere in the app rather than picked freestanding:
+       raw = just landed, not yet organized (violet), sorted = queued for
+       automated extraction (blue, "working on it"), review = needs your
+       attention (amber - the same hue review.html's own queue breakdown
+       already uses for "Repetido"/duplicate), stock = done (var(--green),
+       the same green available.html's "Disponível" and review.html's
+       "Pronto" already use for "good"). */
+    --step-raw: #4a3aa7;
+    --step-sorted: #2a78d6;
+    --step-review: #eda100;
     --step-stock: #eda100;
   }
+  /* The current page's own step color, so the sidebar highlight, header
+     accent, and primary buttons all pick it up automatically instead of
+     each page hardcoding its own copy. Darker hover shades reuse the same
+     ones already established elsewhere (button.info/button.warning). */
+  body[data-step="raw"] { --page-accent: var(--step-raw); --page-accent-dark: #3a2d85; }
+  body[data-step="sorted"] { --page-accent: var(--step-sorted); --page-accent-dark: #1e5fa8; }
+  body[data-step="review"] { --page-accent: var(--step-review); --page-accent-dark: #c98600; }
+  body[data-step="stock"] { --page-accent: var(--green); --page-accent-dark: var(--green-dark); }
   * { box-sizing: border-box; }
   html {
     /* Always reserve the vertical scrollbar's width, whether this page's
@@ -91,7 +107,7 @@
     cursor: pointer;
     font-family: inherit;
   }
-  .header-action:hover { border-color: var(--green); color: var(--green-dark); }
+  .header-action:hover { border-color: var(--page-accent, var(--green)); color: var(--page-accent-dark, var(--green-dark)); }
   .header-action:disabled { opacity: 0.6; cursor: default; }
   .header-action img { width: 14px; height: 14px; }
 
@@ -143,7 +159,18 @@
     margin-bottom: 0.15rem;
   }
   .sidebar-item:hover { background: var(--bg); }
-  .sidebar-item.active { background: #eaf6ec; color: var(--green-dark); font-weight: 600; }
+  /* Each item hovers in its OWN destination color, not the current page's
+     accent - hovering "Stock" while on /sorted should preview stock's
+     green, not sorted's blue. */
+  .sidebar-item--raw:hover { background: color-mix(in srgb, var(--step-raw) 10%, white); }
+  .sidebar-item--sorted:hover { background: color-mix(in srgb, var(--step-sorted) 10%, white); }
+  .sidebar-item--review:hover { background: color-mix(in srgb, var(--step-review) 10%, white); }
+  .sidebar-item--stock:hover { background: color-mix(in srgb, var(--green) 10%, white); }
+  .sidebar-item.active {
+    background: color-mix(in srgb, var(--page-accent, var(--green)) 12%, white);
+    color: var(--page-accent-dark, var(--green-dark));
+    font-weight: 600;
+  }
   .sidebar-item .badge {
     background: var(--border);
     color: #444;
@@ -152,7 +179,7 @@
     font-size: 0.8rem;
     font-weight: 600;
   }
-  .sidebar-item.active .badge { background: var(--green); color: #fff; }
+  .sidebar-item.active .badge { background: var(--page-accent, var(--green)); color: #fff; }
   .sidebar-item-label { display: flex; align-items: center; gap: 0.6rem; }
   .sidebar-item-label svg { flex-shrink: 0; }
 
@@ -165,13 +192,17 @@
     padding: 1.25rem 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
-  .page-header { padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+  .page-header {
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid color-mix(in srgb, var(--page-accent, var(--green)) 45%, var(--border));
+  }
   .page-header h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
   .subtitle { margin: 0; color: var(--muted); font-size: 0.95rem; }
   .subtitle a { color: var(--green-dark); }
 
   button.primary {
-    background: var(--green);
+    background: var(--page-accent, var(--green));
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -183,7 +214,7 @@
     align-items: center;
     gap: 0.4rem;
   }
-  button.primary:hover { background: var(--green-dark); }
+  button.primary:hover { background: var(--page-accent-dark, var(--green-dark)); }
   button.secondary {
     background: #fff;
     border: 1px solid var(--border);
@@ -192,25 +223,25 @@
     font-size: 0.9rem;
     cursor: pointer;
   }
-  button.secondary:hover { border-color: var(--green); color: var(--green-dark); }
+  button.secondary:hover { border-color: var(--page-accent, var(--green)); color: var(--page-accent-dark, var(--green-dark)); }
 
   {% block extra_style %}{% endblock %}
 </style>
 </head>
-<body>
+<body data-step="{{ active_step or '' }}">
 <div class="app-layout">
   <nav class="sidebar">
     <a class="sidebar-title" href="/"><img src="/static/icon.png" alt="blt - Book Listing Automation" class="sidebar-logo"></a>
-    <a class="sidebar-item {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
+    <a class="sidebar-item sidebar-item--raw {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Imagens raw</span><span class="badge">{{ raw_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'sorted' else '' }}" href="/sorted">
+    <a class="sidebar-item sidebar-item--sorted {{ 'active' if active_step == 'sorted' else '' }}" href="/sorted">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg> Imagens ordenadas</span><span class="badge">{{ sorted_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'review' else '' }}" href="/review">
+    <a class="sidebar-item sidebar-item--review {{ 'active' if active_step == 'review' else '' }}" href="/review">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Livros por confirmar</span><span class="badge">{{ review_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
+    <a class="sidebar-item sidebar-item--stock {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Stock</span><span class="badge">{{ stock_count }}</span>
     </a>
   </nav>
@@ -221,14 +252,14 @@
         <a href="/raw" style="width: {{ raw_pct }}%; background: var(--step-raw);" title="Imagens raw: {{ raw_units_display }} ({{ raw_pct }}%)"></a>
         <a href="/sorted" style="width: {{ sorted_pct }}%; background: var(--step-sorted);" title="Imagens ordenadas: {{ sorted_count }} ({{ sorted_pct }}%)"></a>
         <a href="/review" style="width: {{ review_pct }}%; background: var(--step-review);" title="Por confirmar: {{ review_count }} ({{ review_pct }}%)"></a>
-        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--step-stock);" title="Stock: {{ stock_count }} ({{ stock_pct }}%)"></a>
+        <a href="/stock" style="width: {{ stock_pct }}%; background: var(--green);" title="Stock: {{ stock_count }} ({{ stock_pct }}%)"></a>
         {% if unit_pct %}<div class="progress-ticks" style="background-size: {{ unit_pct }}% 100%;"></div>{% endif %}
       </div>
       <div class="progress-legend">
         <a href="/raw"><i style="background: var(--step-raw)"></i>Raw {{ raw_pct }}%</a>
         <a href="/sorted"><i style="background: var(--step-sorted)"></i>Ordenadas {{ sorted_pct }}%</a>
         <a href="/review"><i style="background: var(--step-review)"></i>Por confirmar {{ review_pct }}%</a>
-        <a href="/stock"><i style="background: var(--step-stock)"></i>Stock {{ stock_pct }}%</a>
+        <a href="/stock"><i style="background: var(--green)"></i>Stock {{ stock_pct }}%</a>
       </div>
     </div>
     {% block content %}{% endblock %}
