@@ -16,11 +16,20 @@
     color: #1a1a1a;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
-  .flow-step:hover { border-color: var(--green); }
-  .flow-icon { color: var(--green-dark); }
   .flow-label { font-size: 0.95rem; font-weight: 600; text-align: center; }
-  .flow-count { font-size: 1.6rem; font-weight: 700; color: var(--green-dark); }
+  .flow-count { font-size: 1.6rem; font-weight: 700; }
   .flow-arrow { font-size: 1.5rem; color: var(--muted); }
+
+  /* Each step's icon/count/hover border uses its own pipeline color - same
+     meaning as the progress bar and sidebar, not a uniform green. */
+  .flow-step--raw:hover { border-color: var(--step-raw); }
+  .flow-step--raw .flow-icon, .flow-step--raw .flow-count { color: var(--step-raw); }
+  .flow-step--sorted:hover { border-color: var(--step-sorted); }
+  .flow-step--sorted .flow-icon, .flow-step--sorted .flow-count { color: var(--step-sorted); }
+  .flow-step--review:hover { border-color: var(--step-review); }
+  .flow-step--review .flow-icon, .flow-step--review .flow-count { color: var(--step-review); }
+  .flow-step--stock:hover { border-color: var(--green); }
+  .flow-step--stock .flow-icon, .flow-step--stock .flow-count { color: var(--green-dark); }
 
   .stats-row { display: flex; gap: 1rem; margin: 2rem 0 1.5rem; }
   .stat-card { text-align: center; min-width: 160px; }
@@ -85,25 +94,25 @@
 </header>
 
 <div class="flow">
-  <a class="flow-step" href="/raw">
+  <a class="flow-step flow-step--raw" href="/raw">
     <div class="flow-icon">{{ step_icon("raw") }}</div>
     <div class="flow-label">Imagens raw</div>
     <div class="flow-count">{{ raw_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
-  <a class="flow-step" href="/sorted">
+  <a class="flow-step flow-step--sorted" href="/sorted">
     <div class="flow-icon">{{ step_icon("sorted") }}</div>
     <div class="flow-label">Imagens ordenadas</div>
     <div class="flow-count">{{ sorted_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
-  <a class="flow-step" href="/review">
+  <a class="flow-step flow-step--review" href="/review">
     <div class="flow-icon">{{ step_icon("review") }}</div>
     <div class="flow-label">Por confirmar</div>
     <div class="flow-count">{{ review_count }}</div>
   </a>
   <div class="flow-arrow">&rarr;</div>
-  <a class="flow-step" href="/stock">
+  <a class="flow-step flow-step--stock" href="/stock">
     <div class="flow-icon">{{ step_icon("stock") }}</div>
     <div class="flow-label">Stock</div>
     <div class="flow-count">{{ stock_count }}</div>

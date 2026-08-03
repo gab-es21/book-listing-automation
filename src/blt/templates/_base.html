@@ -25,6 +25,14 @@
     --step-review: #eda100;
     --step-stock: #eda100;
   }
+  /* The current page's own step color, so the sidebar highlight, header
+     accent, and primary buttons all pick it up automatically instead of
+     each page hardcoding its own copy. Darker hover shades reuse the same
+     ones already established elsewhere (button.info/button.warning). */
+  body[data-step="raw"] { --page-accent: var(--step-raw); --page-accent-dark: #3a2d85; }
+  body[data-step="sorted"] { --page-accent: var(--step-sorted); --page-accent-dark: #1e5fa8; }
+  body[data-step="review"] { --page-accent: var(--step-review); --page-accent-dark: #c98600; }
+  body[data-step="stock"] { --page-accent: var(--green); --page-accent-dark: var(--green-dark); }
   * { box-sizing: border-box; }
   html {
     /* Always reserve the vertical scrollbar's width, whether this page's
@@ -151,7 +159,11 @@
     margin-bottom: 0.15rem;
   }
   .sidebar-item:hover { background: var(--bg); }
-  .sidebar-item.active { background: #eaf6ec; color: var(--green-dark); font-weight: 600; }
+  .sidebar-item.active {
+    background: color-mix(in srgb, var(--page-accent, var(--green)) 12%, white);
+    color: var(--page-accent-dark, var(--green-dark));
+    font-weight: 600;
+  }
   .sidebar-item .badge {
     background: var(--border);
     color: #444;
@@ -160,7 +172,7 @@
     font-size: 0.8rem;
     font-weight: 600;
   }
-  .sidebar-item.active .badge { background: var(--green); color: #fff; }
+  .sidebar-item.active .badge { background: var(--page-accent, var(--green)); color: #fff; }
   .sidebar-item-label { display: flex; align-items: center; gap: 0.6rem; }
   .sidebar-item-label svg { flex-shrink: 0; }
 
@@ -173,13 +185,17 @@
     padding: 1.25rem 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
-  .page-header { padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+  .page-header {
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid color-mix(in srgb, var(--page-accent, var(--green)) 45%, var(--border));
+  }
   .page-header h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
   .subtitle { margin: 0; color: var(--muted); font-size: 0.95rem; }
   .subtitle a { color: var(--green-dark); }
 
   button.primary {
-    background: var(--green);
+    background: var(--page-accent, var(--green));
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -191,7 +207,7 @@
     align-items: center;
     gap: 0.4rem;
   }
-  button.primary:hover { background: var(--green-dark); }
+  button.primary:hover { background: var(--page-accent-dark, var(--green-dark)); }
   button.secondary {
     background: #fff;
     border: 1px solid var(--border);
@@ -205,7 +221,7 @@
   {% block extra_style %}{% endblock %}
 </style>
 </head>
-<body>
+<body data-step="{{ active_step or '' }}">
 <div class="app-layout">
   <nav class="sidebar">
     <a class="sidebar-title" href="/"><img src="/static/icon.png" alt="blt - Book Listing Automation" class="sidebar-logo"></a>
