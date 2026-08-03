@@ -331,6 +331,34 @@ def test_raw_confirm_pair_respects_swap(monkeypatch, tmp_path, temp_db):
     _assert_color(cover, (200, 0, 0))  # swapped - b.jpg is now the cover
 
 
+def test_raw_page_has_a_discord_check_button(temp_db):
+    r = client.get("/raw")
+
+    assert 'id="discord-fetch-btn"' in r.text
+    assert "checkDiscordPhotos()" in r.text
+
+
+def test_fetch_discord_route_reports_downloaded_and_delete_failures(monkeypatch, temp_db):
+    monkeypatch.setattr(
+        review_app.discord_fetch, "fetch_new_photos", lambda: {"downloaded": 3, "delete_failures": 1}
+    )
+
+    r = client.post("/raw/fetch-discord")
+
+    assert r.json() == {"fetched": True, "downloaded": 3, "delete_failures": 1}
+
+
+def test_fetch_discord_route_reports_error_when_not_configured(monkeypatch, temp_db):
+    def raise_not_configured():
+        raise review_app.discord_fetch.DiscordFetchError("DISCORD_BOT_TOKEN não está configurado no .env.")
+
+    monkeypatch.setattr(review_app.discord_fetch, "fetch_new_photos", raise_not_configured)
+
+    r = client.post("/raw/fetch-discord")
+
+    assert r.json() == {"fetched": False, "error": "DISCORD_BOT_TOKEN não está configurado no .env."}
+
+
 # -------- Sorted images --------
 
 def test_sorted_page_lists_ungrouped_extracted_books(temp_db):
