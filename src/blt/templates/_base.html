@@ -107,7 +107,7 @@
     cursor: pointer;
     font-family: inherit;
   }
-  .header-action:hover { border-color: var(--green); color: var(--green-dark); }
+  .header-action:hover { border-color: var(--page-accent, var(--green)); color: var(--page-accent-dark, var(--green-dark)); }
   .header-action:disabled { opacity: 0.6; cursor: default; }
   .header-action img { width: 14px; height: 14px; }
 
@@ -159,6 +159,13 @@
     margin-bottom: 0.15rem;
   }
   .sidebar-item:hover { background: var(--bg); }
+  /* Each item hovers in its OWN destination color, not the current page's
+     accent - hovering "Stock" while on /sorted should preview stock's
+     green, not sorted's blue. */
+  .sidebar-item--raw:hover { background: color-mix(in srgb, var(--step-raw) 10%, white); }
+  .sidebar-item--sorted:hover { background: color-mix(in srgb, var(--step-sorted) 10%, white); }
+  .sidebar-item--review:hover { background: color-mix(in srgb, var(--step-review) 10%, white); }
+  .sidebar-item--stock:hover { background: color-mix(in srgb, var(--green) 10%, white); }
   .sidebar-item.active {
     background: color-mix(in srgb, var(--page-accent, var(--green)) 12%, white);
     color: var(--page-accent-dark, var(--green-dark));
@@ -216,7 +223,7 @@
     font-size: 0.9rem;
     cursor: pointer;
   }
-  button.secondary:hover { border-color: var(--green); color: var(--green-dark); }
+  button.secondary:hover { border-color: var(--page-accent, var(--green)); color: var(--page-accent-dark, var(--green-dark)); }
 
   {% block extra_style %}{% endblock %}
 </style>
@@ -225,16 +232,16 @@
 <div class="app-layout">
   <nav class="sidebar">
     <a class="sidebar-title" href="/"><img src="/static/icon.png" alt="blt - Book Listing Automation" class="sidebar-logo"></a>
-    <a class="sidebar-item {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
+    <a class="sidebar-item sidebar-item--raw {{ 'active' if active_step == 'raw' else '' }}" href="/raw">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Imagens raw</span><span class="badge">{{ raw_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'sorted' else '' }}" href="/sorted">
+    <a class="sidebar-item sidebar-item--sorted {{ 'active' if active_step == 'sorted' else '' }}" href="/sorted">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg> Imagens ordenadas</span><span class="badge">{{ sorted_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'review' else '' }}" href="/review">
+    <a class="sidebar-item sidebar-item--review {{ 'active' if active_step == 'review' else '' }}" href="/review">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Livros por confirmar</span><span class="badge">{{ review_count }}</span>
     </a>
-    <a class="sidebar-item {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
+    <a class="sidebar-item sidebar-item--stock {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Stock</span><span class="badge">{{ stock_count }}</span>
     </a>
   </nav>
