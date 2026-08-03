@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -30,6 +30,24 @@ class Book(Base):
     # every never-skipped book, and behind any book skipped earlier than it -
     # a real FIFO carousel rather than a one-shot "show me the next one".
     skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
+    # Which marketplace(s) this listing is currently posted on - independent
+    # of status/quantity, since the same physical stock can be cross-posted
+    # to several places at once. The set of possible platforms is config-driven
+    # (see blt.platforms.load_platforms), so this is a join table rather than
+    # one column per platform.
+    platforms: Mapped[list["BookPlatform"]] = relationship(cascade="all, delete-orphan")
+
+
+# One row per (book, platform) the book is currently posted on. A plain slug
+# string rather than a foreign key to a platforms table, since the available
+# platforms live in platforms.json, not the database - matches how Sale.platform
+# below is also just a snapshot string, not a join.
+class BookPlatform(Base):
+    __tablename__ = "book_platforms"
+    __table_args__ = (UniqueConstraint("book_id", "platform"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"))
+    platform: Mapped[str] = mapped_column(String(32))
 
 
 # One row per physical copy sold - snapshots title/isbn/price at the moment
@@ -43,3 +61,7 @@ class Sale(Base):
     isbn: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     sold_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Which platform this particular copy sold on. Null when the book wasn't
+    # cross-posted (nothing to disambiguate) or for sales recorded before
+    # this column existed.
+    platform: Mapped[str | None] = mapped_column(String(32), nullable=True)

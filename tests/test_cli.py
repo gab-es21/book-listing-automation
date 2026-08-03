@@ -100,6 +100,46 @@ def test_review_starts_uvicorn_with_host_and_port(monkeypatch):
     assert captured == {"host": "0.0.0.0", "port": 9000}
 
 
+def test_fetch_discord_photos_reports_downloaded_count(monkeypatch):
+    import blt.discord_fetch as discord_fetch
+
+    monkeypatch.setattr(discord_fetch, "fetch_new_photos", lambda: {"downloaded": 4, "delete_failures": 0})
+
+    result = runner.invoke(app, ["fetch-discord-photos"])
+
+    assert result.exit_code == 0
+    assert "4 foto" in result.output
+    assert "não foram apagadas" not in result.output
+
+
+def test_fetch_discord_photos_warns_about_delete_failures(monkeypatch):
+    import blt.discord_fetch as discord_fetch
+
+    monkeypatch.setattr(discord_fetch, "fetch_new_photos", lambda: {"downloaded": 2, "delete_failures": 1})
+
+    result = runner.invoke(app, ["fetch-discord-photos"])
+
+    assert result.exit_code == 0
+    assert "2 foto" in result.output
+    assert "não foram apagadas" in result.output
+
+
+def test_fetch_discord_photos_not_configured_exits_with_error(monkeypatch):
+    import blt.discord_fetch as discord_fetch
+
+    def raise_not_configured():
+        raise discord_fetch.DiscordFetchError(
+            "DISCORD_BOT_TOKEN e/ou DISCORD_PHOTOS_CHANNEL_ID não estão configurados no .env."
+        )
+
+    monkeypatch.setattr(discord_fetch, "fetch_new_photos", raise_not_configured)
+
+    result = runner.invoke(app, ["fetch-discord-photos"])
+
+    assert result.exit_code == 1
+    assert "não estão configurados" in result.output
+
+
 def test_convert_heic_passes_path_and_flags(monkeypatch):
     import blt.heic_convert as heic_convert
 

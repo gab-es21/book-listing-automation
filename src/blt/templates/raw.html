@@ -35,6 +35,10 @@
 <header class="page-header">
   <h1>Imagens raw</h1>
   <p class="subtitle">{{ pairs|length }} par(es) proposto(s){% if leftover %} &middot; {{ leftover|length }} sem par{% endif %}</p>
+  <div class="header-actions">
+    <button type="button" class="header-action" id="discord-fetch-btn" onclick="checkDiscordPhotos()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Verificar Discord</button>
+  </div>
+  <div class="action-status" id="discord-fetch-status" hidden></div>
 </header>
 
 {% if pairs %}
@@ -86,6 +90,42 @@ function toggleRoles(i) {
   const tmp = a.textContent;
   a.textContent = b.textContent;
   b.textContent = tmp;
+}
+
+function checkDiscordPhotos() {
+  const btn = document.getElementById("discord-fetch-btn");
+  const status = document.getElementById("discord-fetch-status");
+  btn.disabled = true;
+  status.hidden = true;
+  fetch("/raw/fetch-discord", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      status.hidden = false;
+      if (data.fetched) {
+        if (data.downloaded > 0) {
+          status.className = "action-status success";
+          status.textContent = `${data.downloaded} foto(s) nova(s) - a atualizar...`;
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          status.className = "action-status success";
+          status.textContent = "Sem fotos novas no Discord.";
+          btn.disabled = false;
+        }
+        if (data.delete_failures > 0) {
+          status.textContent += ` (${data.delete_failures} mensagem(ns) por apagar - tenta novamente mais tarde.)`;
+        }
+      } else {
+        status.className = "action-status error";
+        status.textContent = `Erro: ${data.error}`;
+        btn.disabled = false;
+      }
+    })
+    .catch(() => {
+      status.hidden = false;
+      status.className = "action-status error";
+      status.textContent = "Erro ao verificar o Discord: falha de rede.";
+      btn.disabled = false;
+    });
 }
 </script>
 {% endblock %}

@@ -41,6 +41,9 @@
   }
   .field-row textarea { height: 8rem; }
   .field-hint { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+  .platform-checks { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+  .platform-checks label { display: flex; align-items: center; gap: 0.35rem; font-weight: 400; }
+  .platform-icon { width: 14px; height: 14px; }
 
   /* Native number-input spin buttons round to a whole unit on some
      browser/OS combinations even with step="0.01" set - hidden here and
@@ -312,6 +315,19 @@
       <label for="quantity">Quantidade <span class="field-hint">(cópias idênticas a vender)</span></label>
       <div class="field-row">
         <input id="quantity" name="quantity" type="number" step="1" min="1" value="{{ book.quantity }}">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Plataformas</label>
+      <div class="platform-checks">
+        {% for p in platforms %}
+        <label>
+          <input type="checkbox" name="platforms" value="{{ p.slug }}" {{ 'checked' if p.slug in checked_platform_slugs }}>
+          <img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">
+          {{ p.name }}
+        </label>
+        {% endfor %}
       </div>
     </div>
 

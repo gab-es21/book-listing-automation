@@ -90,6 +90,29 @@
   .price-stepper button:last-child { border-radius: 0 0 6px 6px; }
   .price-stepper button:hover { color: var(--green-dark); border-color: var(--green); }
 
+  .platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #eef1f4;
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    margin: 0.1rem 0.2rem 0.1rem 0;
+    white-space: nowrap;
+  }
+  .platform-icon { width: 12px; height: 12px; }
+  .platform-checks { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .platform-checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; font-weight: 400; }
+  .sold-form { display: flex; gap: 0.4rem; align-items: center; }
+  .sold-form select {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
   tr.sold-out { background: #fff1f0; color: #9a6a6a; }
   .sold-out-label { color: #c92a2a; font-weight: 600; font-size: 0.85rem; }
 
@@ -176,6 +199,7 @@
       <th>{{ sort_link('title', 'Título') }}</th>
       <th>{{ sort_link('author', 'Autor') }}</th>
       <th>{{ sort_link('isbn', 'ISBN') }}</th>
+      <th>Plataformas</th>
       <th>{{ sort_link('price', 'Preço') }}</th>
       <th>{{ sort_link('quantity', 'Restam') }}</th>
       <th></th>
@@ -186,13 +210,29 @@
       <td>{{ book.title or "(sem título)" }}</td>
       <td>{{ book.author or "-" }}</td>
       <td>{{ book.isbn or "-" }}</td>
+      <td>
+        {% for bp in book.platforms %}
+        {% set p = platform_by_slug.get(bp.platform) %}
+        <span class="platform-badge">
+          {% if p %}<img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">{{ p.name }}{% else %}{{ bp.platform }}{% endif %}
+        </span>
+        {% endfor %}
+      </td>
       <td>{{ "%.2f"|format(book.price) if book.price is not none else "-" }} €</td>
       <td>{{ book.quantity }}</td>
       <td>
         {% if book.status == "sold_out" %}
           <span class="sold-out-label">Esgotado</span>
         {% else %}
-          <form method="post" action="/sold/{{ book.id }}">
+          <form method="post" action="/sold/{{ book.id }}" class="sold-form">
+            {% if book.platforms|length > 1 %}
+            <select name="platform" aria-label="Plataforma da venda">
+              {% for bp in book.platforms %}
+              {% set p = platform_by_slug.get(bp.platform) %}
+              <option value="{{ bp.platform }}">{{ p.name if p else bp.platform }}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
             <button type="submit" class="sold">Marcar 1 vendido</button>
           </form>
         {% endif %}
@@ -211,7 +251,7 @@
       </td>
     </tr>
     <tr class="edit-row" id="edit-row-{{ book.id }}" style="display: none;">
-      <td colspan="7">
+      <td colspan="8">
         <form method="post" action="/stock/edit/{{ book.id }}" class="edit-form">
           <div class="edit-field title-field">
             <label for="edit-title-{{ book.id }}">Título</label>
@@ -238,6 +278,19 @@
           <div class="edit-field quantity-field">
             <label for="edit-quantity-{{ book.id }}">Quantidade</label>
             <input type="number" step="1" min="0" name="quantity" id="edit-quantity-{{ book.id }}" value="{{ book.quantity }}" oninput="markDirty({{ book.id }})">
+          </div>
+          <div class="edit-field platforms-field">
+            <label>Plataformas</label>
+            <div class="platform-checks">
+              {% set book_platform_slugs = book.platforms|map(attribute='platform')|list %}
+              {% for p in platforms %}
+              <label>
+                <input type="checkbox" name="platforms" value="{{ p.slug }}" {{ 'checked' if p.slug in book_platform_slugs }} onchange="markDirty({{ book.id }})">
+                <img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">
+                {{ p.name }}
+              </label>
+              {% endfor %}
+            </div>
           </div>
           <div class="edit-actions">
             <button type="submit" class="icon-btn confirm" id="save-btn-{{ book.id }}" title="Guardar" disabled>

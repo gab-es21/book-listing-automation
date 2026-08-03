@@ -1,0 +1,5 @@
+[
+  {"slug": "vinted", "name": "Vinted", "domain": "vinted.pt", "default": true},
+  {"slug": "olx", "name": "OLX", "domain": "olx.pt", "default": false},
+  {"slug": "marketplace", "name": "Marketplace", "domain": "facebook.com", "default": false}
+]

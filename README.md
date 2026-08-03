@@ -18,6 +18,7 @@ CLI + local web tool that helps list used books for sale on Vinted: take phone p
   - [How it works](#how-it-works)
   - [The web app](#the-web-app)
   - [Discord notifications](#discord-notifications)
+  - [Faster photo intake via Discord](#faster-photo-intake-via-discord)
   - [ISBN-first extraction](#isbn-first-extraction)
   - [Development mode](#development-mode)
   - [CLI reference](#cli-reference)
@@ -119,6 +120,26 @@ Both `/review` and `/stock` have an **Enviar para Discord** button - an optional
 
 **Setup**: in Discord, go to a channel's *Settings → Integrations → Webhooks → New Webhook*, copy its URL, and set `DISCORD_WEBHOOK_URL` to it in `.env`.
 
+## Faster photo intake via Discord
+
+A USB cable transfer can be slow and occasionally drops photos. `blt fetch-discord-photos` is a faster alternative: send phone photos to a Discord channel instead, then pull them straight into `RAW_DIR` with one command, in place of manually copying files over.
+
+This is a one-shot, on-demand fetch you run whenever you want new photos - **not** an always-running bot. It's a plain, authenticated HTTP call to Discord's REST API (no `discord.py`, no persistent connection, no gateway/websocket), the same on-demand shape as `blt extract`/`blt group-all`. Each run:
+
+1. Reads every message currently in one **dedicated** channel (never the same channel `DISCORD_WEBHOOK_URL` posts to above - otherwise this would try to re-ingest the tool's own posted cover photos as new raw intake).
+2. Downloads each image attachment into `RAW_DIR`, skipping any attachment already downloaded in a previous run (tracked in a local `.discord_sync_state.json`, never committed).
+3. Sets the downloaded file's modified-time to the Discord message's own timestamp - `blt group-all`'s chronological pairing relies on a photo's timestamp (EXIF `DateTimeOriginal`, else file mtime), and Discord sometimes strips EXIF from uploaded images. Without this step, stripped EXIF would fall back to "whenever the fetch happened to run" instead of "when the photo was actually sent," which could scramble cover/ISBN pairing order for a whole batch.
+4. Deletes the message once its photo is safely saved, keeping the channel a clean inbox. If a delete fails (a permissions hiccup, a network blip), the message is just left alone - the next run recognizes it's already downloaded and only retries the delete, so nothing is ever silently lost or duplicated.
+
+**Image quality**: Discord doesn't re-encode file attachments server-side - what's downloaded is byte-for-byte what was uploaded (up to Discord's attachment size limit). The one thing to check is client-side: some phones' Discord app has a "compress images" upload setting that downsamples *before* sending - turn that off if it exists.
+
+**Setup** (one-time):
+
+1. Create a bot application at [discord.com/developers/applications](https://discord.com/developers/applications) and copy its bot token.
+2. Create a new text channel dedicated to this alone.
+3. Invite the bot to that channel with **View Channel**, **Read Message History**, and **Manage Messages** (needed to delete messages after a successful download) permissions.
+4. Copy the channel's ID (enable Developer Mode in Discord's settings, then right-click the channel → *Copy Channel ID*) and set both `DISCORD_BOT_TOKEN` and `DISCORD_PHOTOS_CHANNEL_ID` in `.env`. Leave either unset to disable the command entirely - it fails with a clear error instead of doing nothing silently.
+
 ## ISBN-first extraction
 
 There's no reliable alternative to a real ISBN, so this doesn't try to guess one: `pyzbar` decodes the actual EAN-13 barcode from the ISBN close-up photo - a solved, deterministic computer-vision problem, not OCR. A successful decode already implies a valid checksum.
@@ -146,6 +167,7 @@ Default is `false` - leave it that way for real usage.
 
 ```bash
 blt initdb                      # create the local SQLite schema
+blt fetch-discord-photos        # pull new photos from the dedicated Discord channel into photos_raw/
 blt group-all [--max-groups N]  # sort+pair everything in photos_raw/ into photos_grouped/book_NNN/
 blt convert-heic PATH           # convert HEIC/HEIF photos to JPEG in place
 blt extract [--limit N]         # run barcode+Almedina(+isbnsearch.org fallback) extraction on pending books missing data
