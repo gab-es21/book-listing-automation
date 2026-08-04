@@ -379,15 +379,126 @@ def test_sorted_page_excludes_already_extracted_books(temp_db):
     assert "0 livro" in r.text
 
 
-def test_sorted_detect_runs_extraction_and_redirects(monkeypatch, temp_db):
-    calls = []
-    monkeypatch.setattr(review_app, "extract_pending_books", lambda: calls.append(1))
+def _reset_bulk_detect_state():
+    review_app._bulk_detect_state.update(running=False, current=0, total=0, book_label=None)
 
-    r = client.post("/sorted/detect", follow_redirects=False)
 
-    assert r.status_code == 303
-    assert r.headers["location"] == "/sorted"
-    assert calls == [1]
+def test_sorted_detect_resolves_every_book_in_the_queue(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    a_id = _add_book(temp_db, folder_path="book_detect_a", status="pending", title=None)
+    b_id = _add_book(temp_db, folder_path="book_detect_b", status="pending", title=None)
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields",
+        lambda folder: {"title": f"Resolved {folder}", "author": None, "isbn": "999"},
+    )
+
+    client.post("/sorted/detect")
+
+    with temp_db() as s:
+        assert s.get(Book, a_id).status == "pending"
+        assert s.get(Book, b_id).status == "pending"
+        assert s.get(Book, a_id).title.startswith("Resolved")
+        assert s.get(Book, b_id).title.startswith("Resolved")
+
+
+def test_sorted_detect_paces_requests_between_books_not_before_the_first(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    _add_book(temp_db, folder_path="book_detect_c", status="pending", title=None)
+    _add_book(temp_db, folder_path="book_detect_d", status="pending", title=None)
+    _add_book(temp_db, folder_path="book_detect_e", status="pending", title=None)
+    sleep_calls = []
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": None})
+
+    client.post("/sorted/detect")
+
+    assert len(sleep_calls) == 2  # paced between books, but not before the first one
+
+
+def test_sorted_detect_uses_dev_cache_in_dev_mode(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    monkeypatch.setattr(review_app.settings, "DEV_MODE", True)
+    book_id = _add_book(temp_db, folder_path="book_detect_dev", status="pending", title=None)
+    monkeypatch.setattr(review_app, "extract_book_fields", _boom_if_called)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(
+        review_app, "_extract_with_dev_cache",
+        lambda s, folder: {"title": "Cached", "author": None, "isbn": "1"},
+    )
+
+    client.post("/sorted/detect")
+
+    with temp_db() as s:
+        assert s.get(Book, book_id).title == "Cached"
+
+
+def test_sorted_detect_returns_started_and_total_as_json(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    _add_book(temp_db, folder_path="book_detect_f", status="pending", title=None)
+    _add_book(temp_db, folder_path="book_detect_g", status="pending", title=None)
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(review_app, "extract_book_fields", lambda folder: {"title": None, "author": None, "isbn": None})
+
+    r = client.post("/sorted/detect")
+
+    assert r.json() == {"started": True, "total": 2}
+
+
+def test_sorted_detect_does_not_start_a_second_run_while_one_is_in_progress(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    _add_book(temp_db, folder_path="book_detect_h", status="pending", title=None)
+    review_app._bulk_detect_state.update(running=True, current=1, total=3, book_label="book_x")
+    monkeypatch.setattr(review_app.threading, "Thread", lambda *a, **k: _boom_if_called())
+
+    r = client.post("/sorted/detect")
+
+    assert r.json() == {"started": False, "already_running": True}
+
+
+def test_sorted_detect_status_reports_progress_per_book(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    _add_book(temp_db, folder_path="book_detect_i", status="pending", title=None)
+    _add_book(temp_db, folder_path="book_detect_j", status="pending", title=None)
+    monkeypatch.setattr(review_app.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(review_app.threading, "Thread", _SyncThread)
+    snapshots = []
+
+    def fake_reextract_one(s, book):
+        snapshots.append(dict(review_app._bulk_detect_state))
+        book.title = f"Resolved {book.folder_path}"
+        book.status = "pending"
+
+    monkeypatch.setattr(review_app, "_reextract_one", fake_reextract_one)
+
+    client.post("/sorted/detect")
+
+    assert [snap["current"] for snap in snapshots] == [1, 2]
+    assert all(snap["total"] == 2 for snap in snapshots)
+    assert all(snap["running"] for snap in snapshots)
+    assert review_app._bulk_detect_state["running"] is False
+
+
+def test_sorted_detect_status_endpoint_returns_current_state(monkeypatch, temp_db):
+    _reset_bulk_detect_state()
+    review_app._bulk_detect_state.update(running=True, current=2, total=5, book_label="book_004")
+
+    r = client.get("/sorted/detect/status")
+
+    assert r.json() == {"running": True, "current": 2, "total": 5, "book_label": "book_004"}
+
+
+def test_sorted_page_has_a_bulk_progress_element(temp_db):
+    _add_book(temp_db, folder_path="book_detect_ui", status="pending", title=None)
+
+    r = client.get("/sorted")
+
+    assert 'id="detect-btn"' in r.text
+    assert "startBulkDetect()" in r.text
+    assert 'id="bulk-progress"' in r.text
 
 
 # -------- Detected book waiting confirmation (/review) --------

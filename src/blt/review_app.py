@@ -21,7 +21,7 @@ from sqlalchemy import and_, case, delete, func, or_, select
 
 from . import db, discord_fetch, discord_notify, group_photos
 from .config import settings
-from .extract import _extract_with_dev_cache, extract_book_fields, extract_pending_books
+from .extract import _extract_with_dev_cache, extract_book_fields
 from .images import IMG_EXTS, load_image_any
 from .listing import compose_listing
 from .models import Book, BookPlatform, Sale
@@ -36,6 +36,13 @@ _SAFE_ORIGIN_HOSTS = {"localhost", "127.0.0.1"}
 # app, so a plain dict + lock is enough; no real concurrency to worry about.
 _bulk_reextract_lock = threading.Lock()
 _bulk_reextract_state: dict = {"running": False, "current": 0, "total": 0, "book_label": None}
+
+# Same pattern as above, for /sorted's "Detetar livros" (the first-time
+# extraction of a freshly-grouped batch, as opposed to review's re-search of
+# books already extracted once) - kept as its own separate lock/state since
+# the two operate on different book sets and can legitimately run at once.
+_bulk_detect_lock = threading.Lock()
+_bulk_detect_state: dict = {"running": False, "current": 0, "total": 0, "book_label": None}
 
 
 def _serve_image(path: Path):
@@ -357,6 +364,31 @@ def _run_bulk_reextract(book_ids: list[int]) -> None:
             _bulk_reextract_state["running"] = False
 
 
+def _run_bulk_detect(book_ids: list[int]) -> None:
+    """Runs in a background thread: extracts every given sorted book, one at
+    a time with the same pacing as extract_pending_books, publishing
+    progress to _bulk_detect_state as it goes so /sorted/detect/status has
+    something live to report."""
+    total = len(book_ids)
+    with _bulk_detect_lock:
+        _bulk_detect_state.update(running=True, current=0, total=total, book_label=None)
+    try:
+        with db.SessionLocal() as s:
+            for i, book_id in enumerate(book_ids):
+                if i > 0:
+                    time.sleep(random.uniform(2, 5))
+                book = s.get(Book, book_id)
+                if book is None:
+                    continue
+                with _bulk_detect_lock:
+                    _bulk_detect_state.update(current=i + 1, book_label=Path(book.folder_path).name)
+                _reextract_one(s, book)
+                s.commit()
+    finally:
+        with _bulk_detect_lock:
+            _bulk_detect_state["running"] = False
+
+
 def _sidebar_counts(s) -> dict:
     raw_dir = Path(settings.RAW_DIR)
     raw_count = len([p for p in raw_dir.glob("*") if p.suffix.lower() in IMG_EXTS]) if raw_dir.exists() else 0
@@ -509,8 +541,23 @@ def sorted_images(request: Request):
 
 @app.post("/sorted/detect")
 def detect_books():
-    extract_pending_books()
-    return RedirectResponse("/sorted", status_code=303)
+    """Runs in a background thread, paced the same way extract_pending_books
+    is, so the page can poll /sorted/detect/status and show live progress
+    instead of leaving the page hanging for the whole multi-book run - same
+    pattern as /review's "Procurar todos novamente"."""
+    with _bulk_detect_lock:
+        if _bulk_detect_state["running"]:
+            return {"started": False, "already_running": True}
+    with db.SessionLocal() as s:
+        book_ids = list(s.execute(select(Book.id).where(_SORTED_FILTER).order_by(Book.id)).scalars().all())
+    threading.Thread(target=_run_bulk_detect, args=(book_ids,), daemon=True).start()
+    return {"started": True, "total": len(book_ids)}
+
+
+@app.get("/sorted/detect/status")
+def detect_books_status():
+    with _bulk_detect_lock:
+        return dict(_bulk_detect_state)
 
 
 # -------- Detected book waiting confirmation --------
