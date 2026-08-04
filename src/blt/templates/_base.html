@@ -88,6 +88,35 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* Shared by any page-level "this runs paced, in the background, poll for
+     progress" action - /review's "Procurar todos novamente" and /sorted's
+     "Detetar livros". */
+  .bulk-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  /* [hidden] and .bulk-progress both have specificity 0,1,0 - without this,
+     the later author rule above wins the cascade and the attribute is
+     silently ignored, leaving the spinner visible at all times. */
+  .bulk-progress[hidden] { display: none; }
+  .bulk-progress-bar {
+    flex: 0 1 200px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bulk-progress-bar > div {
+    height: 100%;
+    background: var(--green);
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
   /* A row of small pill-shaped actions next to a page header - "rever o
      anterior", "procurar todos novamente", "enviar para Discord", etc.
      Shared between review.html and available.html. */

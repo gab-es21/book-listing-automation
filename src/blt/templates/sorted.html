@@ -21,9 +21,14 @@
 </header>
 
 {% if books %}
-<form method="post" action="/sorted/detect" style="margin-bottom: 1.5rem;">
-  <button type="submit" class="primary">Detetar livros ({{ books|length }})</button>
-</form>
+<div style="margin-bottom: 1.5rem;">
+  <button type="button" class="primary" id="detect-btn" onclick="startBulkDetect()">Detetar livros ({{ books|length }})</button>
+  <div class="bulk-progress" id="bulk-progress" hidden>
+    <span class="spinner"></span>
+    <span id="bulk-progress-text"></span>
+    <div class="bulk-progress-bar"><div id="bulk-progress-fill"></div></div>
+  </div>
+</div>
 
 <div class="sorted-grid">
   {% for book in books %}
@@ -39,4 +44,35 @@
 {% else %}
 <div class="card"><p>Nenhuma imagem ordenada à espera de deteção.</p></div>
 {% endif %}
+
+<script>
+function startBulkDetect() {
+  document.getElementById("detect-btn").disabled = true;
+  fetch("/sorted/detect", { method: "POST" }).then(() => pollBulkDetectStatus());
+}
+
+function pollBulkDetectStatus() {
+  fetch("/sorted/detect/status")
+    .then(r => r.json())
+    .then(data => {
+      if (data.total === 0 && !data.running) {
+        document.getElementById("detect-btn").disabled = false;
+        return;
+      }
+      const box = document.getElementById("bulk-progress");
+      const text = document.getElementById("bulk-progress-text");
+      const fill = document.getElementById("bulk-progress-fill");
+      box.hidden = false;
+      const pct = data.total ? Math.round((data.current / data.total) * 100) : 0;
+      fill.style.width = pct + "%";
+      const label = data.book_label ? ` - "${data.book_label}"` : "";
+      text.textContent = `A detetar ${data.current} de ${data.total}${label}`;
+      if (data.running) {
+        setTimeout(pollBulkDetectStatus, 1000);
+      } else {
+        setTimeout(() => location.reload(), 500);
+      }
+    });
+}
+</script>
 {% endblock %}
