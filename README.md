@@ -17,6 +17,7 @@ CLI + local web tool that helps list used books for sale on Vinted: take phone p
   - [Quick start](#quick-start)
   - [How it works](#how-it-works)
   - [The web app](#the-web-app)
+  - [Screenshots](#screenshots)
   - [Discord notifications](#discord-notifications)
   - [Faster photo intake via Discord](#faster-photo-intake-via-discord)
   - [ISBN-first extraction](#isbn-first-extraction)
@@ -110,6 +111,28 @@ The landing page (`/`) is a dashboard: the same four steps as a flow diagram, ru
 - **Stock editing** is deliberately not auto-save-on-change, since `<input type="number">` responds to mouse-wheel scrolling and could silently change the price if it auto-saved - edits start disabled (grey) until a field actually changes, then turn green/red to save or discard.
 
 </details>
+
+## Screenshots
+
+**Dashboard** (`/`) - flow diagram, running totals, weekly charts.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Imagens raw** (`/raw`) - confirm the proposed cover/ISBN photo pairing.
+
+![Imagens raw](docs/screenshots/raw.png)
+
+**Imagens ordenadas** (`/sorted`) - grouped books waiting on extraction.
+
+![Imagens ordenadas](docs/screenshots/sorted.png)
+
+**Livros por confirmar** (`/review`) - the copy-paste review page.
+
+![Livros por confirmar](docs/screenshots/review.png)
+
+**Stock** (`/stock`) - searchable, sortable listing management.
+
+![Stock](docs/screenshots/stock.png)
 
 ## Discord notifications
 
