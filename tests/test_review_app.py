@@ -1709,9 +1709,24 @@ def test_dashboard_weekly_rows_have_collapsible_detail_with_tooltip_wiring(temp_
 
     assert 'class="week-detail-row"' in r.text
     assert "hidden" in r.text
-    assert "toggleWeekDetail('sold-" in r.text
+    assert "handleRowClick('sold', " in r.text
     assert "showChartTooltip(event, 'sold'," in r.text
     assert "Nora Roberts" in r.text
+
+
+def test_dashboard_clicking_point_or_row_selects_both(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_select", status="available", quantity=1, author="Nora Roberts", price=6.0
+    )
+    client.post(f"/sold/{book_id}")
+
+    r = client.get("/")
+
+    assert "handlePointClick('sold', " in r.text
+    assert "handlePointClick('added', " in r.text
+    assert 'id="row-sold-' in r.text
+    assert 'id="point-sold-' in r.text
+    assert "function selectWeek(series, week)" in r.text
 
 
 def test_mark_sold_decrements_quantity(temp_db):
