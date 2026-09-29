@@ -5,6 +5,7 @@ detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
 import random
+import re
 import shutil
 import threading
 import time
@@ -1019,6 +1020,71 @@ def delete_book(book_id: int):
 # platform(s) you used. Composition itself happens client-side in bundle.html
 # (the book data is already on the page for the checkboxes) - nothing here
 # generates text, this only serves the picker and records the platform flags.
+#
+# OLX's upload dialog only lets you browse for files (no drag-and-drop from
+# the page the way Vinted's does), so there's no way to hand it images
+# straight from wherever each book's own book_NNN folder happens to live -
+# "Criar pasta de capas" instead copies just the selected covers into one
+# throwaway folder you can point that dialog's browse-for-files box at.
+
+_BUNDLE_TMP_PREFIX = "bundle_"
+_BUNDLE_TMP_MAX_AGE_SECONDS = 3600
+
+
+def _bundle_tmp_root() -> Path:
+    return Path(settings.BUNDLE_TMP_DIR)
+
+
+def _cleanup_stale_bundle_tmp_dirs() -> None:
+    """Removes any of our own cover-photo folders older than an hour - a
+    safety net for one a previous session created but never got to clean up
+    itself (e.g. the tab was closed before clicking Marcar selecionados).
+    Runs every time a new one is about to be created."""
+    now = time.time()
+    for entry in _bundle_tmp_root().glob(f"{_BUNDLE_TMP_PREFIX}*"):
+        if entry.is_dir() and now - entry.stat().st_mtime > _BUNDLE_TMP_MAX_AGE_SECONDS:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _new_bundle_tmp_dir() -> Path:
+    _cleanup_stale_bundle_tmp_dirs()
+    name = f"{_BUNDLE_TMP_PREFIX}{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    path = _bundle_tmp_root() / name
+    path.mkdir(parents=True)
+    return path
+
+
+def _is_bundle_tmp_dir(path: Path) -> bool:
+    """Safety check before ever deleting a client-submitted path: it must
+    resolve to directly inside our own tmp root and match our own naming
+    pattern - never anything else, however it got submitted."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return resolved.parent == _bundle_tmp_root().resolve() and resolved.name.startswith(_BUNDLE_TMP_PREFIX)
+
+
+def _safe_filename(name: str | None) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]', "", name).strip() if name else ""
+    return cleaned[:60]
+
+
+@app.post("/bundle/prepare-photos")
+def bundle_prepare_photos(book_ids: list[int] | None = Form(None)):
+    tmp_dir = _new_bundle_tmp_dir()
+    with db.SessionLocal() as s:
+        for i, book_id in enumerate(book_ids or [], start=1):
+            book = s.get(Book, book_id)
+            if book is None or book.status != "available":
+                continue
+            cover = Path(book.folder_path) / "cover.jpg"
+            if not cover.exists():
+                continue
+            safe_title = _safe_filename(book.title) or f"livro {book_id}"
+            shutil.copyfile(cover, tmp_dir / f"{i:02d} - {safe_title}.jpg")
+    return {"path": str(tmp_dir.resolve())}
+
 
 @app.get("/bundle", response_class=HTMLResponse)
 def bundle_page(request: Request, marked: int = 0):
@@ -1049,7 +1115,11 @@ def bundle_page(request: Request, marked: int = 0):
 
 
 @app.post("/bundle/mark-platforms")
-def bundle_mark_platforms(book_ids: list[int] | None = Form(None), platforms: list[str] | None = Form(None)):
+def bundle_mark_platforms(
+    book_ids: list[int] | None = Form(None),
+    platforms: list[str] | None = Form(None),
+    tmp_photos_dir: str = Form(""),
+):
     ids = book_ids or []
     slugs = set(platforms or []) & _known_platform_slugs()
     with db.SessionLocal() as s:
@@ -1059,6 +1129,10 @@ def bundle_mark_platforms(book_ids: list[int] | None = Form(None), platforms: li
                 continue
             _add_platforms(s, book_id, slugs)
         s.commit()
+    if tmp_photos_dir:
+        path = Path(tmp_photos_dir)
+        if _is_bundle_tmp_dir(path):
+            shutil.rmtree(path, ignore_errors=True)
     return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
 
 

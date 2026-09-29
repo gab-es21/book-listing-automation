@@ -30,6 +30,9 @@
   .bundle-summary { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.9rem; color: var(--muted); }
   .bundle-summary strong { color: #1a1a1a; }
 
+  .bundle-hint { margin: -0.4rem 0 0.6rem; font-size: 0.82rem; color: var(--muted); }
+  .bundle-photos-btn { margin-bottom: 1.5rem; }
+
   .author-group { margin-bottom: 1.25rem; }
   .author-group h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
   .author-select-all { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 700; }
@@ -133,6 +136,15 @@ Tenho mais livros à venda.</textarea>
         <textarea id="bundle-preview" readonly></textarea>
         <button type="button" class="copy" onclick="copyBundleField('bundle-preview', this)">Copiar</button>
       </div>
+
+      <h3>Pasta de capas</h3>
+      <p class="bundle-hint">Para quando o site só deixa procurar ficheiros (sem arrastar) - cria uma pasta temporária só com as capas selecionadas, para colares o caminho no explorador do popup de upload.</p>
+      <div class="bundle-field-row">
+        <input id="bundle-photos-dir" type="text" readonly placeholder="Ainda não criada">
+        <button type="button" class="copy" onclick="copyBundleField('bundle-photos-dir', this)">Copiar</button>
+      </div>
+      <button type="button" class="secondary bundle-photos-btn" onclick="prepareBundlePhotos(this)">Criar pasta de capas</button>
+      <input type="hidden" name="tmp_photos_dir" id="bundle-tmp-dir-field" value="">
 
       <h3>Marcar como publicado em</h3>
       <div class="platform-checks">
@@ -239,6 +251,29 @@ function copyBundleField(id, btn) {
     btn.textContent = "Copiado!";
     setTimeout(() => { btn.textContent = original; }, 1200);
   });
+}
+
+function prepareBundlePhotos(btn) {
+  const ids = Array.from(document.querySelectorAll('input[name="book_ids"]:checked')).map((cb) => cb.value);
+  if (ids.length === 0) {
+    alert("Seleciona pelo menos um livro.");
+    return;
+  }
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "A criar...";
+  const formData = new FormData();
+  ids.forEach((id) => formData.append("book_ids", id));
+  fetch("/bundle/prepare-photos", { method: "POST", body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      document.getElementById("bundle-photos-dir").value = data.path;
+      document.getElementById("bundle-tmp-dir-field").value = data.path;
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = original;
+    });
 }
 
 function confirmMarkPlatforms() {
