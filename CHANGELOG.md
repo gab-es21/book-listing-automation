@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A "Procurar por ISBN" button on `/review`, shown only for a book with no ISBN at all (barcode photo couldn't be decoded) - lets you type the ISBN by hand and runs it through the same Vinted/Almedina/isbnsearch.org lookup chain as barcode extraction, filling in title/author/description/price when found. A miss keeps the book `failed` but still saves the typed ISBN, so a later retry via the existing "Procurar" button doesn't need it re-typed.
 - Second-source ISBN fallback: when Almedina doesn't carry a resolved barcode's ISBN, `isbnsearch.org` is now tried before giving up.
 - Live progress feedback on the review page's re-search actions: "procurar todos novamente" now runs in the background and shows a spinner with a live "a procurar X de Y" counter and progress bar instead of leaving the page hanging for the whole paced multi-book run; the single "Procurar" button also shows a spinner while its request is in flight.
 - Discord notifications: an optional "Enviar para Discord" button on `/review` groups the confirmation queue into the 3 physical sorting piles (retake photo / enter by hand / ready to sell) with cover photos attached; a matching button on `/stock` posts the full current stock as text. Both are a plain webhook (`DISCORD_WEBHOOK_URL` in `.env`) - no bot, no token beyond the URL itself, disabled entirely when unset.
