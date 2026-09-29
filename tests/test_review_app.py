@@ -1020,6 +1020,71 @@ def test_review_form_reextract_button_hidden_without_isbn(temp_db):
     assert 'action="/reextract/' not in r.text
 
 
+def test_manual_isbn_resolves_and_flips_failed_to_pending(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual", status="failed", isbn=None)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields_from_isbn",
+        lambda isbn: {"title": "Sempre Tu", "author": "Colleen Hoover", "isbn": isbn},
+    )
+
+    client.post(f"/manual-isbn/{book_id}", data={"isbn": "9789896689704"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.title == "Sempre Tu"
+        assert book.author == "Colleen Hoover"
+        assert book.isbn == "9789896689704"
+        assert book.description
+        assert book.status == "pending"
+
+
+def test_manual_isbn_keeps_failed_status_when_still_unresolved(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual_fail", status="failed", isbn=None)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields_from_isbn",
+        lambda isbn: {"title": None, "author": None, "isbn": isbn},
+    )
+
+    client.post(f"/manual-isbn/{book_id}", data={"isbn": "000000000000X"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.status == "failed"
+        assert book.isbn == "000000000000X"  # saved even on a miss, for a future retry
+
+
+def test_manual_isbn_rejects_blank_isbn(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual_blank", status="failed", isbn=None)
+
+    r = client.post(f"/manual-isbn/{book_id}", data={"isbn": "   "})
+
+    assert r.status_code == 400
+    with temp_db() as s:
+        assert s.get(Book, book_id).isbn is None
+
+
+def test_manual_isbn_unknown_book_404s(temp_db):
+    r = client.post("/manual-isbn/999999", data={"isbn": "9789896689704"})
+
+    assert r.status_code == 404
+
+
+def test_review_form_manual_isbn_button_shown_only_without_isbn(temp_db):
+    _add_book(temp_db, folder_path="book_manual_shown", status="failed", isbn=None)
+
+    r = client.get("/review")
+
+    assert 'action="/manual-isbn/' in r.text
+
+
+def test_review_form_manual_isbn_button_hidden_when_isbn_present(temp_db):
+    _add_book(temp_db, folder_path="book_manual_hidden", status="failed", isbn="333")
+
+    r = client.get("/review")
+
+    assert 'action="/manual-isbn/' not in r.text
+
+
 class _SyncThread:
     """Stand-in for threading.Thread that runs the target immediately, in the
     calling thread, instead of really threading - makes the background bulk

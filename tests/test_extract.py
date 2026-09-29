@@ -183,3 +183,40 @@ def test_no_barcode_leaves_unresolved_no_lookup_attempted(monkeypatch, tmp_path)
     result = extract.extract_book_fields(tmp_path)
 
     assert result == {"title": None, "author": None, "isbn": None}
+
+
+def test_manual_isbn_resolves_no_barcode_decode_attempted(monkeypatch):
+    """extract_book_fields_from_isbn skips barcode decoding entirely - it's
+    meant for books whose barcode photo couldn't be decoded at all."""
+    monkeypatch.setattr(extract, "decode_isbn_barcode", _boom)
+    monkeypatch.setattr(
+        extract, "vinted_lookup_by_isbn", lambda isbn: {"title": "Sempre Tu", "author": "Colleen Hoover"}
+    )
+    monkeypatch.setattr(extract, "almedina_lookup_by_isbn", _boom)
+    monkeypatch.setattr(extract, "isbnsearch_lookup_by_isbn", _boom)
+
+    result = extract.extract_book_fields_from_isbn("9789896689704")
+
+    assert result == {"title": "Sempre Tu", "author": "Colleen Hoover", "isbn": "9789896689704"}
+
+
+def test_manual_isbn_falls_back_through_the_same_chain(monkeypatch):
+    monkeypatch.setattr(extract, "vinted_lookup_by_isbn", lambda isbn: None)
+    monkeypatch.setattr(extract, "almedina_lookup_by_isbn", lambda isbn: None)
+    monkeypatch.setattr(
+        extract, "isbnsearch_lookup_by_isbn", lambda isbn: {"title": "A villa", "author": "Nora Roberts"}
+    )
+
+    result = extract.extract_book_fields_from_isbn("9789898032577")
+
+    assert result == {"title": "A villa", "author": "Nora Roberts", "isbn": "9789898032577"}
+
+
+def test_manual_isbn_all_sources_miss_leaves_unresolved(monkeypatch):
+    monkeypatch.setattr(extract, "vinted_lookup_by_isbn", lambda isbn: None)
+    monkeypatch.setattr(extract, "almedina_lookup_by_isbn", lambda isbn: None)
+    monkeypatch.setattr(extract, "isbnsearch_lookup_by_isbn", lambda isbn: None)
+
+    result = extract.extract_book_fields_from_isbn("0000000000000")
+
+    assert result == {"title": None, "author": None, "isbn": "0000000000000"}
