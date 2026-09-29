@@ -205,10 +205,11 @@ function computeBundleTitle(books, sharedAuthor) {
   if (sharedAuthor) {
     return `Lote de ${books.length} livros - ${sharedAuthor}`;
   }
-  const maxTitles = 3;
-  const shown = books.slice(0, maxTitles).map((b) => b.title).join(" + ");
-  const rest = books.length - maxTitles;
-  return rest > 0 ? `${shown} + outros ${rest}` : shown;
+  const authors = [...new Set(books.map((b) => b.author || "Autor desconhecido"))];
+  const authorsPart = authors.length <= 2
+    ? authors.join(" e ")
+    : `${authors.slice(0, 2).join(", ")} e outros`;
+  return `Lote de ${books.length} livros - ${authorsPart}`;
 }
 
 function toggleAuthorGroup(selectAllCheckbox) {

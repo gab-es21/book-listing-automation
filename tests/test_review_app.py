@@ -1902,6 +1902,9 @@ def test_bundle_page_has_generated_title_field_wired(temp_db):
     assert 'id="bundle-title"' in r.text
     assert "function computeBundleTitle(books, sharedAuthor)" in r.text
     assert "copyBundleField('bundle-title', this)" in r.text
+    # mixed-author selections cap the title at 2 author names, not more
+    assert "authors.slice(0, 2)" in r.text
+    assert "e outros" in r.text
 
 
 def test_bundle_page_shows_existing_platform_badge_on_an_already_bundled_book(temp_db):
