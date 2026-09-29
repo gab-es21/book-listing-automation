@@ -449,46 +449,129 @@ def _sidebar_counts(s) -> dict:
     }
 
 
+def _week_key(column):
+    """SQLite ISO-ish week key ("2026-W29") shared by every weekly grouping
+    below - zero-padded and lexically sortable, so plain string sort/compare
+    already puts weeks in chronological order."""
+    return func.strftime("%Y-W%W", column)
+
+
+def _weekly_book_detail(s) -> dict:
+    """
+    Per-week book-level detail backing the dashboard's collapsible table
+    rows and the activity chart's hover tooltip - which books were added,
+    and which were sold, each week. Sold rows outer-join back to Book for
+    author + a cover thumbnail; both come back blank when the Book row was
+    since deleted (e.g. via /stock's delete) - the Sale snapshot survives
+    that on its own (title/price), but author/photo don't.
+    """
+    added_rows = s.execute(
+        select(Book.id, Book.title, Book.author, Book.price, _week_key(Book.created_at).label("week"))
+        .order_by(Book.created_at)
+    ).all()
+    # Sale.book_id itself survives a deleted Book (it's just a snapshot, no
+    # cascade) - Book.id from the join, not Sale.book_id, is what actually
+    # tells us whether that book still exists to link a thumbnail to.
+    sold_rows = s.execute(
+        select(
+            Sale.title, Sale.price, Book.id.label("existing_book_id"), Book.author,
+            _week_key(Sale.sold_at).label("week"),
+        )
+        .outerjoin(Book, Book.id == Sale.book_id)
+        .order_by(Sale.sold_at)
+    ).all()
+
+    added_by_week: dict[str, list[dict]] = {}
+    for row in added_rows:
+        added_by_week.setdefault(row.week, []).append(
+            {"title": row.title, "author": row.author, "price": row.price, "photo_url": f"/photo/{row.id}/cover.jpg"}
+        )
+
+    sold_by_week: dict[str, list[dict]] = {}
+    for row in sold_rows:
+        sold_by_week.setdefault(row.week, []).append(
+            {
+                "title": row.title,
+                "author": row.author,
+                "price": row.price,
+                "photo_url": f"/photo/{row.existing_book_id}/cover.jpg" if row.existing_book_id else None,
+            }
+        )
+
+    return {"added": added_by_week, "sold": sold_by_week}
+
+
+def _activity_chart_data(added_counts: dict, sold_counts: dict) -> dict:
+    """
+    Builds the combined added/sold line chart's points, precomputed in the
+    SVG's own plot-area coordinates (0-320 x, 16-92 y) so the template does
+    no scaling math. Both series share one y-scale - toggling a series on/off
+    client-side just hides its line/points without rescaling the other, so
+    relative height between weeks and between series stays meaningful.
+    """
+    weeks = sorted(set(added_counts) | set(sold_counts))
+    if not weeks:
+        return {"weeks": [], "added": [], "sold": [], "added_points": "", "sold_points": ""}
+
+    chart_w, baseline_y, top_y = 320, 92, 16
+    plot_h = baseline_y - top_y
+    n = len(weeks)
+    slot_w = chart_w / n
+    max_v = max([*added_counts.values(), *sold_counts.values(), 0])
+
+    def y_of(v):
+        return round(baseline_y - (v / max_v * plot_h if max_v else 0), 1)
+
+    xs = [round(i * slot_w + slot_w / 2, 1) for i in range(n)]
+
+    def _series(counts: dict) -> list[dict]:
+        return [
+            {"week": w, "x": x, "y": y_of(counts.get(w, 0)), "value": counts.get(w, 0)}
+            for w, x in zip(weeks, xs, strict=True)
+        ]
+
+    added = _series(added_counts)
+    sold = _series(sold_counts)
+
+    return {
+        "weeks": weeks,
+        "chart_w": chart_w,
+        "baseline_y": baseline_y,
+        "added": added,
+        "sold": sold,
+        "added_points": " ".join(f"{p['x']},{p['y']}" for p in added),
+        "sold_points": " ".join(f"{p['x']},{p['y']}" for p in sold),
+    }
+
+
 def _metrics(s) -> dict:
     weekly_sales = s.execute(
         select(
-            func.strftime("%Y-W%W", Sale.sold_at).label("week"),
+            _week_key(Sale.sold_at).label("week"),
             func.count(Sale.id).label("count"),
             func.sum(Sale.price).label("revenue"),
-        ).group_by("week").order_by(func.strftime("%Y-W%W", Sale.sold_at).desc())
+        ).group_by("week").order_by(_week_key(Sale.sold_at).desc())
     ).all()
     weekly_added = s.execute(
-        select(
-            func.strftime("%Y-W%W", Book.created_at).label("week"),
-            func.count(Book.id).label("count"),
-        ).group_by("week").order_by(func.strftime("%Y-W%W", Book.created_at).desc())
+        select(_week_key(Book.created_at).label("week"), func.count(Book.id).label("count"))
+        .group_by("week").order_by(_week_key(Book.created_at).desc())
     ).all()
     total_revenue = s.execute(select(func.sum(Sale.price))).scalar_one() or 0.0
     total_sold = s.execute(select(func.count(Sale.id))).scalar_one()
+
+    detail = _weekly_book_detail(s)
+    added_counts = {row.week: row.count for row in weekly_added}
+    sold_counts = {row.week: row.count for row in weekly_sales}
+
     return {
         "weekly_sales": weekly_sales,
         "weekly_added": weekly_added,
         "total_revenue": total_revenue,
         "total_sold": total_sold,
-        "revenue_chart": _bar_chart_data([(row.week, row.revenue) for row in weekly_sales]),
-        "added_chart": _bar_chart_data([(row.week, row.count) for row in weekly_added]),
+        "weekly_added_detail": detail["added"],
+        "weekly_sold_detail": detail["sold"],
+        "activity_chart": _activity_chart_data(added_counts, sold_counts),
     }
-
-
-def _bar_chart_data(pairs: list) -> list:
-    """
-    pairs: [(label, value), ...] most-recent-first (as the weekly queries
-    return them for the table). Returns the same data oldest-first (so the
-    chart reads left-to-right forward in time) with each value's height as a
-    0-100 percentage of the series max, ready for an SVG bar to consume
-    directly without doing math in the template.
-    """
-    items = list(reversed(pairs))
-    max_v = max((v or 0) for _, v in items) if items else 0
-    return [
-        {"label": label, "value": v or 0, "pct": round((v or 0) / max_v * 100, 1) if max_v else 0}
-        for label, v in items
-    ]
 
 
 @app.get("/", response_class=HTMLResponse)
