@@ -33,6 +33,19 @@
   .bundle-hint { margin: -0.4rem 0 0.6rem; font-size: 0.82rem; color: var(--muted); }
   .bundle-photos-btn { margin-bottom: 1.5rem; }
 
+  /* Collapsed by default - the general intro rarely changes between
+     bundles, so it shouldn't compete with the title/description you
+     actually copy every time. */
+  .bundle-general-details { margin-bottom: 1.5rem; }
+  .bundle-general-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1a1a1a;
+  }
+  .bundle-general-details summary:hover { color: var(--page-accent-dark); }
+  .bundle-general-details .bundle-field-row { margin-top: 0.75rem; margin-bottom: 0; }
+
   .author-group { margin-bottom: 1.25rem; }
   .author-group h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
   .author-select-all { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 700; }
@@ -111,20 +124,12 @@
   </div>
 
   <div>
-    <div class="card bundle-general">
-      <h3>Descrição geral</h3>
-      <div class="bundle-field-row">
-        <textarea id="bundle-general" oninput="regenerateBundleText()">Lote de livros em bom estado.
-Tenho mais livros à venda.</textarea>
-      </div>
-
+    <div class="card bundle-preview">
       <div class="bundle-summary">
         <span><strong id="bundle-count">0</strong> selecionado(s)</span>
         <span>Subtotal: <strong id="bundle-subtotal">0.00</strong> &euro;</span>
       </div>
-    </div>
 
-    <div class="card bundle-preview" style="margin-top: 1.5rem;">
       <h3>Título do anúncio</h3>
       <div class="bundle-field-row">
         <input id="bundle-title" type="text" readonly>
@@ -136,6 +141,14 @@ Tenho mais livros à venda.</textarea>
         <textarea id="bundle-preview" readonly></textarea>
         <button type="button" class="copy" onclick="copyBundleField('bundle-preview', this)">Copiar</button>
       </div>
+
+      <details class="bundle-general-details">
+        <summary>Descrição geral (editar)</summary>
+        <div class="bundle-field-row">
+          <textarea id="bundle-general" oninput="regenerateBundleText()">Lote de livros em bom estado.
+Tenho mais livros à venda.</textarea>
+        </div>
+      </details>
 
       <h3>Pasta de capas</h3>
       <p class="bundle-hint">Para quando o site só deixa procurar ficheiros (sem arrastar) - cria uma pasta temporária só com as capas selecionadas, para colares o caminho no explorador do popup de upload.</p>
