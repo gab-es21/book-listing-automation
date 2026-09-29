@@ -71,7 +71,6 @@
     max-width: 260px;
     max-height: 280px;
     overflow-y: auto;
-    pointer-events: none;
     font-size: 0.82rem;
   }
   .chart-tooltip-title { font-weight: 700; margin-bottom: 0.4rem; }
@@ -126,13 +125,13 @@
     <g id="chart-series-added">
       <polyline class="added-line" points="{{ chart.added_points }}"></polyline>
       {% for p in chart.added %}
-      <circle class="added-point" cx="{{ p.x }}" cy="{{ p.y }}" r="3.5" onmouseenter="showChartTooltip(event, 'added', '{{ p.week }}')" onmousemove="moveChartTooltip(event)" onmouseleave="hideChartTooltip()"></circle>
+      <circle class="added-point" cx="{{ p.x }}" cy="{{ p.y }}" r="3.5" onmouseenter="showChartTooltip(event, 'added', '{{ p.week }}')" onmousemove="moveChartTooltip(event)" onmouseleave="scheduleHideChartTooltip()"></circle>
       {% endfor %}
     </g>
     <g id="chart-series-sold">
       <polyline class="sold-line" points="{{ chart.sold_points }}"></polyline>
       {% for p in chart.sold %}
-      <circle class="sold-point" cx="{{ p.x }}" cy="{{ p.y }}" r="3.5" onmouseenter="showChartTooltip(event, 'sold', '{{ p.week }}')" onmousemove="moveChartTooltip(event)" onmouseleave="hideChartTooltip()"></circle>
+      <circle class="sold-point" cx="{{ p.x }}" cy="{{ p.y }}" r="3.5" onmouseenter="showChartTooltip(event, 'sold', '{{ p.week }}')" onmousemove="moveChartTooltip(event)" onmouseleave="scheduleHideChartTooltip()"></circle>
       {% endfor %}
     </g>
     {% for p in chart.added %}
@@ -245,7 +244,7 @@
   </div>
 </div>
 
-<div id="chart-tooltip" class="chart-tooltip" hidden></div>
+<div id="chart-tooltip" class="chart-tooltip" hidden onmouseenter="clearTimeout(tooltipHideTimer)" onmouseleave="scheduleHideChartTooltip()"></div>
 
 <script>
 function toggleWeekDetail(key) {
@@ -263,7 +262,15 @@ function setChartSeries(mode, btn) {
   btn.classList.add("active");
 }
 
+// The tooltip itself accepts pointer events (so a long book list can be
+// scrolled), which means moving the mouse off the hovered chart point and
+// onto the tooltip would otherwise fire that point's mouseleave first - a
+// short cancellable delay bridges that gap instead of the tooltip vanishing
+// right as the cursor reaches it.
+let tooltipHideTimer = null;
+
 function showChartTooltip(evt, series, week) {
+  clearTimeout(tooltipHideTimer);
   const source = document.getElementById(`detail-${series}-${week}`);
   const tooltip = document.getElementById("chart-tooltip");
   if (!source) return;
@@ -282,7 +289,13 @@ function moveChartTooltip(evt) {
   tooltip.style.top = `${evt.clientY + 14}px`;
 }
 
+function scheduleHideChartTooltip() {
+  clearTimeout(tooltipHideTimer);
+  tooltipHideTimer = setTimeout(hideChartTooltip, 200);
+}
+
 function hideChartTooltip() {
+  clearTimeout(tooltipHideTimer);
   document.getElementById("chart-tooltip").hidden = true;
 }
 </script>
