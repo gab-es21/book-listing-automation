@@ -1030,6 +1030,7 @@ def bundle_page(request: Request, marked: int = 0):
         books_by_author: dict[str, list[Book]] = {}
         for book in books:
             books_by_author.setdefault(book.author or "Autor desconhecido", []).append(book)
+        platforms = load_platforms()
         return templates.TemplateResponse(
             request,
             "bundle.html",
@@ -1037,7 +1038,11 @@ def bundle_page(request: Request, marked: int = 0):
                 **ctx,
                 "active_step": "bundle",
                 "books_by_author": books_by_author,
-                "platforms": load_platforms(),
+                "platforms": platforms,
+                # lets a book row show which platform(s) it's already flagged on
+                # (e.g. already in an earlier bundle) - it still shows up here
+                # either way, since you may want to post it to another platform.
+                "platform_by_slug": {p.slug: p for p in platforms},
                 "marked": marked,
             },
         )

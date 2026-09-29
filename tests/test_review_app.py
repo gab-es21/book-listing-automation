@@ -1885,6 +1885,40 @@ def test_bundle_page_platform_checkboxes_exclude_vinted(temp_db):
     assert 'name="platforms" value="vinted"' not in r.text
 
 
+def test_bundle_page_shows_select_all_checkbox_per_author(temp_db):
+    _add_book(temp_db, folder_path="book_b5", status="available", title="Solo", author="Some Author", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'class="author-select-all"' in r.text
+    assert 'onchange="toggleAuthorGroup(this)"' in r.text
+
+
+def test_bundle_page_shows_existing_platform_badge_on_an_already_bundled_book(temp_db):
+    _add_book(
+        temp_db, folder_path="book_b6", status="available", title="Already Posted", price=5.0,
+        platforms=["olx"],
+    )
+
+    r = client.get("/bundle")
+
+    # the book still appears in the picker - it's just labeled, never hidden -
+    # and its existing platform shows up as a badge, matching /stock's badges.
+    assert "Already Posted" in r.text
+    assert 'name="book_ids" value=' in r.text
+    assert '<span class="platform-badge">' in r.text
+    assert "OLX" in r.text
+
+
+def test_bundle_page_book_with_no_platforms_shows_no_badge(temp_db):
+    _add_book(temp_db, folder_path="book_b7", status="available", title="Never Posted", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Never Posted" in r.text
+    assert '<span class="platform-badge">' not in r.text
+
+
 def test_bundle_mark_platforms_adds_without_removing_existing(temp_db):
     book_id = _add_book(
         temp_db, folder_path="book_mark1", status="available", title="Marked", price=5.0, platforms=["vinted"]

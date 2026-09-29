@@ -32,6 +32,7 @@
 
   .author-group { margin-bottom: 1.25rem; }
   .author-group h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .author-select-all { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 700; }
   .bundle-book-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; }
   .bundle-book-row label { display: flex; align-items: center; gap: 0.6rem; flex: 1; cursor: pointer; }
   .bundle-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); flex: 0 0 auto; }
@@ -41,6 +42,22 @@
   .platform-icon { width: 12px; height: 12px; }
   .platform-checks { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .platform-checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; font-weight: 400; }
+
+  /* Already-flagged platforms for a book (e.g. it's in an earlier bundle,
+     or already listed on Vinted) - shown so it's obvious at a glance, but
+     never filters the book out of the picker; you may still want to post
+     it to a different platform too. */
+  .platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #eef1f4;
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
 {% endblock %}
 {% block content %}
 <header class="page-header">
@@ -63,7 +80,12 @@
     <h3>Escolher livros</h3>
     {% for author, books in books_by_author.items() %}
     <div class="author-group">
-      <h4>{{ author }}</h4>
+      <h4>
+        <label class="author-select-all">
+          <input type="checkbox" onchange="toggleAuthorGroup(this)">
+          {{ author }}
+        </label>
+      </h4>
       {% for book in books %}
       <div class="bundle-book-row">
         <label>
@@ -74,6 +96,10 @@
           <img src="/photo/{{ book.id }}/cover.jpg" alt="" class="bundle-thumb" onerror="this.remove()">
           <span class="bundle-book-title">{{ book.title or "Sem título" }}</span>
           <span class="bundle-book-price">{{ "%.2f"|format(book.price) if book.price is not none else "-" }} &euro;</span>
+          {% for bp in book.platforms %}
+          {% set p = platform_by_slug.get(bp.platform) %}
+          <span class="platform-badge">{% if p %}<img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">{{ p.name }}{% else %}{{ bp.platform }}{% endif %}</span>
+          {% endfor %}
         </label>
       </div>
       {% endfor %}
@@ -157,6 +183,27 @@ function regenerateBundleText() {
   }
 
   document.getElementById("bundle-preview").value = lines.join("\n");
+  syncAuthorSelectAllCheckboxes();
+}
+
+function toggleAuthorGroup(selectAllCheckbox) {
+  const group = selectAllCheckbox.closest(".author-group");
+  group.querySelectorAll('input[name="book_ids"]').forEach((cb) => { cb.checked = selectAllCheckbox.checked; });
+  regenerateBundleText();
+}
+
+// Keeps each author's "select all" checkbox honest after an individual book
+// is (un)checked directly - ticked when every book under it is selected,
+// indeterminate when only some are, empty when none are.
+function syncAuthorSelectAllCheckboxes() {
+  document.querySelectorAll(".author-group").forEach((group) => {
+    const boxes = Array.from(group.querySelectorAll('input[name="book_ids"]'));
+    const selectAll = group.querySelector(".author-select-all input");
+    if (!selectAll || boxes.length === 0) return;
+    const checkedCount = boxes.filter((cb) => cb.checked).length;
+    selectAll.checked = checkedCount === boxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  });
 }
 
 function copyBundlePreview(btn) {
