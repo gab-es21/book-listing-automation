@@ -37,19 +37,14 @@ from .vinted_lookup import VintedLookupError
 from .vinted_lookup import lookup_by_isbn as vinted_lookup_by_isbn
 
 
-def extract_book_fields(folder: Path) -> dict:
+def _lookup_isbn_fields(isbn: str) -> dict:
     """
-    Returns {"title", "author", "isbn"}. `title` is None when the book could
-    not be resolved (no barcode, or neither Vinted, Almedina, nor isbnsearch.org
-    has a title for it) - the caller marks that book status="failed" for manual
-    entry. The barcode-decoded ISBN is kept even when unresolved, since it's
-    still valid on its own.
+    Runs the Vinted -> Almedina -> isbnsearch.org lookup chain for an
+    already-known ISBN (barcode-decoded or hand-typed). Returns
+    {"title", "author"} with whatever fields resolved - a source is never
+    allowed to overwrite a field another source already filled; lookups stop
+    as soon as both are filled, or once all sources are exhausted.
     """
-    folder = Path(folder)
-    isbn = decode_isbn_barcode(folder / "isbn.jpg")
-    if not isbn:
-        return {"title": None, "author": None, "isbn": None}
-
     title: str | None = None
     author: str | None = None
 
@@ -74,7 +69,36 @@ def extract_book_fields(folder: Path) -> dict:
         title = title or looked_up.get("title")
         author = author or looked_up.get("author")
 
-    return {"title": title, "author": author, "isbn": isbn}
+    return {"title": title, "author": author}
+
+
+def extract_book_fields(folder: Path) -> dict:
+    """
+    Returns {"title", "author", "isbn"}. `title` is None when the book could
+    not be resolved (no barcode, or neither Vinted, Almedina, nor isbnsearch.org
+    has a title for it) - the caller marks that book status="failed" for manual
+    entry. The barcode-decoded ISBN is kept even when unresolved, since it's
+    still valid on its own.
+    """
+    folder = Path(folder)
+    isbn = decode_isbn_barcode(folder / "isbn.jpg")
+    if not isbn:
+        return {"title": None, "author": None, "isbn": None}
+
+    fields = _lookup_isbn_fields(isbn)
+    return {"title": fields["title"], "author": fields["author"], "isbn": isbn}
+
+
+def extract_book_fields_from_isbn(isbn: str) -> dict:
+    """
+    Manual-entry counterpart to extract_book_fields: skips barcode decode
+    entirely and runs the same Vinted -> Almedina -> isbnsearch.org lookup
+    chain directly against a hand-typed ISBN, for books whose barcode photo
+    couldn't be decoded at all. Returns {"title", "author", "isbn"} with the
+    same "title is None means unresolved" contract as extract_book_fields.
+    """
+    fields = _lookup_isbn_fields(isbn)
+    return {"title": fields["title"], "author": fields["author"], "isbn": isbn}
 
 
 def _extract_with_dev_cache(s, folder: Path) -> dict:

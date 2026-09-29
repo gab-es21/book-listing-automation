@@ -21,7 +21,7 @@ from sqlalchemy import and_, case, delete, func, or_, select
 
 from . import db, discord_fetch, discord_notify, group_photos
 from .config import settings
-from .extract import _extract_with_dev_cache, extract_book_fields
+from .extract import _extract_with_dev_cache, extract_book_fields, extract_book_fields_from_isbn
 from .images import IMG_EXTS, load_image_any
 from .listing import compose_listing
 from .models import Book, BookPlatform, Sale
@@ -336,6 +336,26 @@ def _reextract_one(s, book: Book) -> None:
         book.status = "pending"
     else:
         book.isbn = fields["isbn"]
+        book.status = "failed"
+
+
+def _manual_isbn_lookup_one(s, book: Book, isbn: str) -> None:
+    """Runs the lookup chain against a hand-typed ISBN, for a book whose
+    barcode photo couldn't be decoded at all - applies the result (or lack
+    of one) exactly like _reextract_one does for a re-run barcode
+    extraction, except the ISBN itself comes from the form instead of a
+    fresh barcode decode."""
+    fields = extract_book_fields_from_isbn(isbn)
+    if fields["title"]:
+        listing = compose_listing(fields)
+        book.title = listing["title"]
+        book.author = listing["author"]
+        book.isbn = listing["isbn"]
+        book.description = listing["description"]
+        book.price = listing["price"]
+        book.status = "pending"
+    else:
+        book.isbn = isbn
         book.status = "failed"
 
 
@@ -768,6 +788,23 @@ def reextract_book(book_id: int):
         if book is None:
             raise HTTPException(404)
         _reextract_one(s, book)
+        s.commit()
+    return RedirectResponse("/review", status_code=303)
+
+
+@app.post("/manual-isbn/{book_id}")
+def manual_isbn_lookup(book_id: int, isbn: str = Form(...)):
+    """Looks up a hand-typed ISBN through the same Vinted/Almedina/isbnsearch.org
+    chain as barcode extraction - for books whose barcode photo couldn't be
+    decoded at all, so there's otherwise no way to trigger a lookup."""
+    isbn = isbn.strip()
+    if not isbn:
+        raise HTTPException(400, "ISBN em falta.")
+    with db.SessionLocal() as s:
+        book = s.get(Book, book_id)
+        if book is None:
+            raise HTTPException(404)
+        _manual_isbn_lookup_one(s, book, isbn)
         s.commit()
     return RedirectResponse("/review", status_code=303)
 
