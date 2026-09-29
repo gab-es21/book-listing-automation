@@ -1020,6 +1020,71 @@ def test_review_form_reextract_button_hidden_without_isbn(temp_db):
     assert 'action="/reextract/' not in r.text
 
 
+def test_manual_isbn_resolves_and_flips_failed_to_pending(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual", status="failed", isbn=None)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields_from_isbn",
+        lambda isbn: {"title": "Sempre Tu", "author": "Colleen Hoover", "isbn": isbn},
+    )
+
+    client.post(f"/manual-isbn/{book_id}", data={"isbn": "9789896689704"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.title == "Sempre Tu"
+        assert book.author == "Colleen Hoover"
+        assert book.isbn == "9789896689704"
+        assert book.description
+        assert book.status == "pending"
+
+
+def test_manual_isbn_keeps_failed_status_when_still_unresolved(monkeypatch, temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual_fail", status="failed", isbn=None)
+    monkeypatch.setattr(
+        review_app, "extract_book_fields_from_isbn",
+        lambda isbn: {"title": None, "author": None, "isbn": isbn},
+    )
+
+    client.post(f"/manual-isbn/{book_id}", data={"isbn": "000000000000X"})
+
+    with temp_db() as s:
+        book = s.get(Book, book_id)
+        assert book.status == "failed"
+        assert book.isbn == "000000000000X"  # saved even on a miss, for a future retry
+
+
+def test_manual_isbn_rejects_blank_isbn(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_manual_blank", status="failed", isbn=None)
+
+    r = client.post(f"/manual-isbn/{book_id}", data={"isbn": "   "})
+
+    assert r.status_code == 400
+    with temp_db() as s:
+        assert s.get(Book, book_id).isbn is None
+
+
+def test_manual_isbn_unknown_book_404s(temp_db):
+    r = client.post("/manual-isbn/999999", data={"isbn": "9789896689704"})
+
+    assert r.status_code == 404
+
+
+def test_review_form_manual_isbn_button_shown_only_without_isbn(temp_db):
+    _add_book(temp_db, folder_path="book_manual_shown", status="failed", isbn=None)
+
+    r = client.get("/review")
+
+    assert 'action="/manual-isbn/' in r.text
+
+
+def test_review_form_manual_isbn_button_hidden_when_isbn_present(temp_db):
+    _add_book(temp_db, folder_path="book_manual_hidden", status="failed", isbn="333")
+
+    r = client.get("/review")
+
+    assert 'action="/manual-isbn/' not in r.text
+
+
 class _SyncThread:
     """Stand-in for threading.Thread that runs the target immediately, in the
     calling thread, instead of really threading - makes the background bulk
@@ -1618,6 +1683,115 @@ def test_dashboard_weekly_sales_table_reflects_a_real_sale(temp_db):
 
     assert "Vendas por semana" in r.text
     assert "12.50" in r.text
+
+
+# -------- Activity chart (added/sold combined) --------
+
+def test_activity_chart_data_shares_one_yscale_across_both_series():
+    chart = review_app._activity_chart_data({"2026-W01": 10, "2026-W02": 2}, {"2026-W01": 0, "2026-W02": 5})
+
+    assert chart["weeks"] == ["2026-W01", "2026-W02"]
+    by_week_added = {p["week"]: p for p in chart["added"]}
+    by_week_sold = {p["week"]: p for p in chart["sold"]}
+    # max across both series is 10 (added, week01) - sold's 5 in week02 should
+    # sit at half the plot height of added's 10 in week01, not rescaled to its
+    # own series max.
+    assert by_week_added["2026-W01"]["y"] < by_week_sold["2026-W02"]["y"] < by_week_added["2026-W02"]["y"]
+    assert by_week_sold["2026-W01"]["value"] == 0
+
+
+def test_activity_chart_data_unions_weeks_present_in_either_series():
+    chart = review_app._activity_chart_data({"2026-W01": 3}, {"2026-W02": 1})
+
+    assert chart["weeks"] == ["2026-W01", "2026-W02"]
+
+
+def test_activity_chart_data_empty_when_no_activity():
+    chart = review_app._activity_chart_data({}, {})
+
+    assert chart == {"weeks": [], "added": [], "sold": [], "added_points": "", "sold_points": ""}
+
+
+def test_weekly_book_detail_added_includes_photo_url(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_detail_added", title="A Villa", author="Nora Roberts", price=5.0)
+
+    with temp_db() as s:
+        detail = review_app._weekly_book_detail(s)
+
+    all_added = [b for books in detail["added"].values() for b in books]
+    expected = {"title": "A Villa", "author": "Nora Roberts", "price": 5.0, "photo_url": f"/photo/{book_id}/cover.jpg"}
+    assert any(b == expected for b in all_added)
+
+
+def test_weekly_book_detail_sold_book_still_in_stock_includes_author_and_photo(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_detail_sold", status="available", quantity=1, author="Colleen Hoover", price=8.0
+    )
+    client.post(f"/sold/{book_id}")
+
+    with temp_db() as s:
+        detail = review_app._weekly_book_detail(s)
+
+    all_sold = [b for books in detail["sold"].values() for b in books]
+    match = next(b for b in all_sold if b["price"] == 8.0)
+    assert match["author"] == "Colleen Hoover"
+    assert match["photo_url"] == f"/photo/{book_id}/cover.jpg"
+
+
+def test_weekly_book_detail_sold_book_since_deleted_omits_author_and_photo(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_detail_sold_del", status="available", quantity=1, author="Colleen Hoover", price=9.0
+    )
+    client.post(f"/sold/{book_id}")
+    with temp_db() as s:
+        s.execute(Book.__table__.delete().where(Book.id == book_id))
+        s.commit()
+
+    with temp_db() as s:
+        detail = review_app._weekly_book_detail(s)
+
+    all_sold = [b for books in detail["sold"].values() for b in books]
+    match = next(b for b in all_sold if b["price"] == 9.0)
+    assert match["author"] is None
+    assert match["photo_url"] is None
+
+
+def test_dashboard_shows_activity_chart_series_toggle(temp_db):
+    r = client.get("/")
+
+    assert "setChartSeries('both'" in r.text
+    assert "setChartSeries('added'" in r.text
+    assert "setChartSeries('sold'" in r.text
+
+
+def test_dashboard_weekly_rows_have_collapsible_detail_with_tooltip_wiring(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_collapse", status="available", quantity=1, author="Nora Roberts", price=7.0
+    )
+    client.post(f"/sold/{book_id}")
+
+    r = client.get("/")
+
+    assert 'class="week-detail-row"' in r.text
+    assert "hidden" in r.text
+    assert "handleRowClick('sold', " in r.text
+    assert "showChartTooltip(event, 'sold'," in r.text
+    assert "Nora Roberts" in r.text
+
+
+def test_dashboard_clicking_point_or_row_selects_both(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_select", status="available", quantity=1, author="Nora Roberts", price=6.0
+    )
+    client.post(f"/sold/{book_id}")
+
+    r = client.get("/")
+
+    assert "handlePointClick('sold', " in r.text
+    assert "handlePointClick('added', " in r.text
+    assert 'id="row-sold-' in r.text
+    assert 'id="point-sold-' in r.text
+    assert "function selectWeek(series, week)" in r.text
 
 
 def test_mark_sold_decrements_quantity(temp_db):
