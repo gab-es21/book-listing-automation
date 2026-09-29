@@ -1,0 +1,182 @@
+{% extends "_base.html" %}
+{% block title %}blt - lotes{% endblock %}
+{% block extra_style %}
+  .bundle-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; align-items: start; }
+
+  .bundle-general textarea, .bundle-preview textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    resize: vertical;
+  }
+  .bundle-general textarea { height: 4rem; }
+  .bundle-preview textarea { height: 14rem; }
+  .bundle-field-row { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 1rem; }
+  .bundle-field-row button.copy {
+    flex: 0 0 auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .bundle-field-row button.copy:hover { border-color: var(--page-accent); color: var(--page-accent-dark); }
+
+  .bundle-summary { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.9rem; color: var(--muted); }
+  .bundle-summary strong { color: #1a1a1a; }
+
+  .author-group { margin-bottom: 1.25rem; }
+  .author-group h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .bundle-book-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; }
+  .bundle-book-row label { display: flex; align-items: center; gap: 0.6rem; flex: 1; cursor: pointer; }
+  .bundle-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); flex: 0 0 auto; }
+  .bundle-book-title { font-weight: 600; font-size: 0.9rem; }
+  .bundle-book-price { color: var(--muted); font-size: 0.85rem; }
+
+  .platform-icon { width: 12px; height: 12px; }
+  .platform-checks { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .platform-checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; font-weight: 400; }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>Lotes</h1>
+  <p class="subtitle">Agrupa livros do stock disponível para publicar de uma vez no Marketplace/OLX (o Vinted continua a ser um anúncio por livro).</p>
+</header>
+
+{% if marked %}
+<p class="action-status success">{{ marked }} livro(s) marcado(s) na(s) plataforma(s) escolhida(s).</p>
+{% endif %}
+
+{% if not books_by_author %}
+<div class="card">
+  <p>Ainda não há livros em stock disponível para agrupar.</p>
+</div>
+{% else %}
+<form method="post" action="/bundle/mark-platforms" onsubmit="return confirmMarkPlatforms()">
+<div class="bundle-layout">
+  <div class="card">
+    <h3>Escolher livros</h3>
+    {% for author, books in books_by_author.items() %}
+    <div class="author-group">
+      <h4>{{ author }}</h4>
+      {% for book in books %}
+      <div class="bundle-book-row">
+        <label>
+          <input type="checkbox" name="book_ids" value="{{ book.id }}"
+                 data-title="{{ book.title or 'Sem título' }}" data-author="{{ book.author or '' }}"
+                 data-price="{{ book.price if book.price is not none else '' }}"
+                 onchange="regenerateBundleText()">
+          <img src="/photo/{{ book.id }}/cover.jpg" alt="" class="bundle-thumb" onerror="this.remove()">
+          <span class="bundle-book-title">{{ book.title or "Sem título" }}</span>
+          <span class="bundle-book-price">{{ "%.2f"|format(book.price) if book.price is not none else "-" }} &euro;</span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="card bundle-general">
+      <h3>Descrição geral</h3>
+      <div class="bundle-field-row">
+        <textarea id="bundle-general" oninput="regenerateBundleText()">Lote de livros em bom estado.
+Tenho mais livros à venda.</textarea>
+      </div>
+
+      <div class="bundle-summary">
+        <span><strong id="bundle-count">0</strong> selecionado(s)</span>
+        <span>Subtotal: <strong id="bundle-subtotal">0.00</strong> &euro;</span>
+      </div>
+    </div>
+
+    <div class="card bundle-preview" style="margin-top: 1.5rem;">
+      <h3>Descrição completa</h3>
+      <div class="bundle-field-row">
+        <textarea id="bundle-preview" readonly></textarea>
+        <button type="button" class="copy" onclick="copyBundlePreview(this)">Copiar</button>
+      </div>
+
+      <h3>Marcar como publicado em</h3>
+      <div class="platform-checks">
+        {% for p in platforms %}
+        {% if p.slug != "vinted" %}
+        <label>
+          <input type="checkbox" name="platforms" value="{{ p.slug }}">
+          <img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">
+          {{ p.name }}
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <button type="submit" class="primary">Marcar selecionados</button>
+    </div>
+  </div>
+</div>
+</form>
+{% endif %}
+
+<script>
+function formatBundlePrice(price) {
+  return price != null && !Number.isNaN(price) ? `${price.toFixed(2)} €` : "-";
+}
+
+function regenerateBundleText() {
+  const checked = Array.from(document.querySelectorAll('input[name="book_ids"]:checked'));
+  const books = checked.map((cb) => ({
+    title: cb.dataset.title,
+    author: cb.dataset.author || null,
+    price: cb.dataset.price ? parseFloat(cb.dataset.price) : null,
+  }));
+
+  document.getElementById("bundle-count").textContent = books.length;
+  const subtotal = books.reduce((sum, b) => sum + (b.price || 0), 0);
+  document.getElementById("bundle-subtotal").textContent = subtotal.toFixed(2);
+
+  const general = document.getElementById("bundle-general").value.trim();
+  const lines = [general, ""];
+
+  if (books.length) {
+    const authors = new Set(books.map((b) => b.author));
+    const sharedAuthor = authors.size === 1 ? [...authors][0] : null;
+    if (sharedAuthor) {
+      lines.push(sharedAuthor);
+      for (const b of books) {
+        lines.push(`${b.title} - ${formatBundlePrice(b.price)}`);
+      }
+    } else {
+      for (const b of books) {
+        lines.push(`${b.title} - ${b.author || "Autor desconhecido"} - ${formatBundlePrice(b.price)}`);
+      }
+    }
+  }
+
+  document.getElementById("bundle-preview").value = lines.join("\n");
+}
+
+function copyBundlePreview(btn) {
+  const el = document.getElementById("bundle-preview");
+  navigator.clipboard.writeText(el.value).then(() => {
+    const original = btn.textContent;
+    btn.textContent = "Copiado!";
+    setTimeout(() => { btn.textContent = original; }, 1200);
+  });
+}
+
+function confirmMarkPlatforms() {
+  const count = document.querySelectorAll('input[name="book_ids"]:checked').length;
+  if (count === 0) {
+    alert("Seleciona pelo menos um livro.");
+    return false;
+  }
+  return confirm(`Marcar ${count} livro(s) como publicado(s) na(s) plataforma(s) escolhida(s)?`);
+}
+
+regenerateBundleText();
+</script>
+{% endblock %}

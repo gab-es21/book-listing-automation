@@ -1833,6 +1833,99 @@ def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
     assert r.text.index("Zzz Still Here") < r.text.index("Gone")
 
 
+# -------- Bundle listings --------
+
+def test_bundle_page_groups_available_books_by_author(temp_db):
+    _add_book(temp_db, folder_path="book_b1", status="available", title="Zeta", author="Author A", price=5.0)
+    _add_book(temp_db, folder_path="book_b2", status="available", title="Alpha", author="Author A", price=6.0)
+    _add_book(temp_db, folder_path="book_b3", status="available", title="Beta", author="Author B", price=7.0)
+
+    r = client.get("/bundle")
+
+    assert "Author A" in r.text
+    assert "Author B" in r.text
+    assert 'data-title="Zeta"' in r.text
+    assert 'data-title="Beta"' in r.text
+
+
+def test_bundle_page_excludes_non_available_books(temp_db):
+    _add_book(temp_db, folder_path="book_pending", status="pending", title="Pending Book")
+    _add_book(temp_db, folder_path="book_sold", status="sold_out", quantity=0, title="Sold Out Book")
+    _add_book(temp_db, folder_path="book_avail", status="available", title="Available Book", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Available Book" in r.text
+    assert "Pending Book" not in r.text
+    assert "Sold Out Book" not in r.text
+
+
+def test_bundle_page_shows_no_author_bucket_for_missing_author(temp_db):
+    _add_book(temp_db, folder_path="book_noauthor", status="available", title="Mystery", author=None, price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Autor desconhecido" in r.text
+
+
+def test_bundle_page_empty_stock_shows_placeholder(temp_db):
+    r = client.get("/bundle")
+
+    assert "Ainda não há livros em stock disponível para agrupar." in r.text
+    assert '<input type="checkbox" name="book_ids"' not in r.text
+
+
+def test_bundle_page_platform_checkboxes_exclude_vinted(temp_db):
+    _add_book(temp_db, folder_path="book_b4", status="available", title="Solo", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'name="platforms" value="olx"' in r.text
+    assert 'name="platforms" value="marketplace"' in r.text
+    assert 'name="platforms" value="vinted"' not in r.text
+
+
+def test_bundle_mark_platforms_adds_without_removing_existing(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_mark1", status="available", title="Marked", price=5.0, platforms=["vinted"]
+    )
+
+    r = client.post(
+        "/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]}, follow_redirects=False
+    )
+
+    assert r.status_code == 303
+    with temp_db() as s:
+        slugs = {bp.platform for bp in s.get(Book, book_id).platforms}
+    assert slugs == {"vinted", "olx"}
+
+
+def test_bundle_mark_platforms_skips_non_available_books(temp_db):
+    pending_id = _add_book(temp_db, folder_path="book_mark2", status="pending", title="Pending")
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [pending_id], "platforms": ["olx"]})
+
+    with temp_db() as s:
+        assert s.get(Book, pending_id).platforms == []
+
+
+def test_bundle_mark_platforms_ignores_unknown_platform_slug(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_mark3", status="available", title="Unknown Slug", price=5.0)
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["not-a-real-platform"]})
+
+    with temp_db() as s:
+        assert s.get(Book, book_id).platforms == []
+
+
+def test_bundle_mark_platforms_redirects_with_marked_count_shown(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_mark4", status="available", title="Count Me", price=5.0)
+
+    r = client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]}, follow_redirects=True)
+
+    assert "1 livro(s) marcado(s)" in r.text
+
+
 # -------- Discord notifications --------
 
 def _make_cover(folder, data=b"fake-jpeg-bytes"):

@@ -1010,6 +1010,53 @@ def delete_book(book_id: int):
     return RedirectResponse("/stock", status_code=303)
 
 
+# -------- Bundle listings (grouped posts for Marketplace/OLX) --------
+#
+# Vinted only accepts one book per listing, but Marketplace/OLX accept a
+# single post covering several books - this lets you hand-pick a few
+# already-in-stock books (any author mix) and get a ready-to-paste grouped
+# description, then optionally flag those books as cross-posted to whichever
+# platform(s) you used. Composition itself happens client-side in bundle.html
+# (the book data is already on the page for the checkboxes) - nothing here
+# generates text, this only serves the picker and records the platform flags.
+
+@app.get("/bundle", response_class=HTMLResponse)
+def bundle_page(request: Request, marked: int = 0):
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        books = s.execute(
+            select(Book).where(Book.status == "available").order_by(Book.author, Book.title)
+        ).scalars().all()
+        books_by_author: dict[str, list[Book]] = {}
+        for book in books:
+            books_by_author.setdefault(book.author or "Autor desconhecido", []).append(book)
+        return templates.TemplateResponse(
+            request,
+            "bundle.html",
+            {
+                **ctx,
+                "active_step": "bundle",
+                "books_by_author": books_by_author,
+                "platforms": load_platforms(),
+                "marked": marked,
+            },
+        )
+
+
+@app.post("/bundle/mark-platforms")
+def bundle_mark_platforms(book_ids: list[int] | None = Form(None), platforms: list[str] | None = Form(None)):
+    ids = book_ids or []
+    slugs = set(platforms or []) & _known_platform_slugs()
+    with db.SessionLocal() as s:
+        for book_id in ids:
+            book = s.get(Book, book_id)
+            if book is None or book.status != "available":
+                continue
+            _add_platforms(s, book_id, slugs)
+        s.commit()
+    return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
+
+
 @app.get("/photo/{book_id}/{name}")
 def photo(book_id: int, name: str):
     if name not in _PHOTO_NAMES:
