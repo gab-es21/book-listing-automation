@@ -7,7 +7,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from blt import review_app
-from blt.models import Book, BookPlatform, Sale
+from blt.models import Book, BookPlatform, Bundle, Sale
 from blt.review_app import app
 
 client = TestClient(app)
@@ -1979,8 +1979,9 @@ def test_bundle_page_has_photos_folder_button_wired(temp_db):
 
     r = client.get("/bundle")
 
-    assert "Criar pasta de capas" in r.text
+    assert "Criar e copiar pasta de capas" in r.text
     assert "function prepareBundlePhotos(btn)" in r.text
+    assert "navigator.clipboard.writeText(data.path)" in r.text
     assert 'name="tmp_photos_dir"' in r.text
     assert 'id="bundle-photos-dir"' in r.text
 
@@ -2113,6 +2114,101 @@ def test_bundle_mark_platforms_refuses_to_delete_a_dir_with_wrong_prefix(temp_db
 
     assert wrong_prefix.exists()
     assert (wrong_prefix / "marker.txt").exists()
+
+
+# -------- Bundle history (/bundles) --------
+
+def test_bundle_mark_platforms_creates_a_bundle_history_record(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_hist1", status="available", title="Historic", author="Jane Doe", price=6.0
+    )
+
+    client.post(
+        "/bundle/mark-platforms",
+        data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote de 1 livro - Jane Doe"},
+    )
+
+    with temp_db() as s:
+        bundle = s.execute(select(Bundle)).scalar_one()
+        assert bundle.title == "Lote de 1 livro - Jane Doe"
+        assert {bp.platform for bp in bundle.platforms} == {"olx"}
+        assert len(bundle.items) == 1
+        assert bundle.items[0].title == "Historic"
+        assert bundle.items[0].author == "Jane Doe"
+        assert bundle.items[0].price == 6.0
+
+
+def test_bundle_mark_platforms_with_no_platform_selected_creates_no_bundle_record(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist2", status="available", title="No Platform", price=6.0)
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id]})
+
+    with temp_db() as s:
+        assert s.execute(select(Bundle)).scalars().all() == []
+
+
+def test_bundle_history_page_lists_bundle_with_live_available_status(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist3", status="available", title="Still Here", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote X"})
+
+    r = client.get("/bundles")
+
+    assert "Lote X" in r.text
+    assert "Still Here" in r.text
+    assert "Disponível" in r.text
+    assert ">1</strong> de <strong>1</strong>" in r.text
+
+
+def test_bundle_history_reflects_an_individual_sale_automatically(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_hist4", status="available", quantity=1, title="Sell Me Solo", price=6.0
+    )
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote Y"})
+
+    client.post(f"/sold/{book_id}")  # sold individually via /stock, not through the bundle flow at all
+
+    r = client.get("/bundles")
+
+    assert "Sell Me Solo" in r.text
+    assert "Vendido" in r.text
+    assert ">0</strong> de <strong>1</strong>" in r.text
+
+
+def test_bundle_history_shows_removido_when_book_later_deleted(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist5", status="available", title="Gone Later", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote Z"})
+
+    client.post(f"/delete/{book_id}")
+
+    r = client.get("/bundles")
+
+    # the snapshot survives even though the Book row is gone
+    assert "Gone Later" in r.text
+    assert "Removido" in r.text
+
+
+def test_bundle_history_empty_state(temp_db):
+    r = client.get("/bundles")
+
+    assert "Ainda não publicaste nenhum lote." in r.text
+
+
+def test_sidebar_has_criar_lotes_and_stock_lotes(temp_db):
+    r = client.get("/")
+
+    assert "Criar Lotes" in r.text
+    assert 'href="/bundle"' in r.text
+    assert "Stock Lotes" in r.text
+    assert 'href="/bundles"' in r.text
+
+
+def test_sidebar_bundle_count_badge_reflects_published_lots(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist6", status="available", title="Badge Test", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
+
+    r = client.get("/")
+
+    assert "Stock Lotes</span><span class=\"badge\">1</span>" in r.text
 
 
 # -------- Discord notifications --------

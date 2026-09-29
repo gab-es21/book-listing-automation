@@ -151,13 +151,13 @@ Tenho mais livros à venda.</textarea>
       </details>
 
       <h3>Pasta de capas</h3>
-      <p class="bundle-hint">Para quando o site só deixa procurar ficheiros (sem arrastar) - cria uma pasta temporária só com as capas selecionadas, para colares o caminho no explorador do popup de upload.</p>
+      <p class="bundle-hint">Para quando o site só deixa procurar ficheiros (sem arrastar) - cria uma pasta temporária só com as capas selecionadas e copia logo o caminho, para colares no explorador do popup de upload.</p>
       <div class="bundle-field-row">
         <input id="bundle-photos-dir" type="text" readonly placeholder="Ainda não criada">
-        <button type="button" class="copy" onclick="copyBundleField('bundle-photos-dir', this)">Copiar</button>
       </div>
-      <button type="button" class="secondary bundle-photos-btn" onclick="prepareBundlePhotos(this)">Criar pasta de capas</button>
+      <button type="button" class="secondary bundle-photos-btn" onclick="prepareBundlePhotos(this)">Criar e copiar pasta de capas</button>
       <input type="hidden" name="tmp_photos_dir" id="bundle-tmp-dir-field" value="">
+      <input type="hidden" name="bundle_title" id="bundle-title-field" value="">
 
       <h3>Marcar como publicado em</h3>
       <div class="platform-checks">
@@ -214,8 +214,10 @@ function regenerateBundleText() {
     }
   }
 
+  const title = computeBundleTitle(books, sharedAuthor);
   document.getElementById("bundle-preview").value = lines.join("\n");
-  document.getElementById("bundle-title").value = computeBundleTitle(books, sharedAuthor);
+  document.getElementById("bundle-title").value = title;
+  document.getElementById("bundle-title-field").value = title;
   syncAuthorSelectAllCheckboxes();
 }
 
@@ -282,10 +284,13 @@ function prepareBundlePhotos(btn) {
     .then((data) => {
       document.getElementById("bundle-photos-dir").value = data.path;
       document.getElementById("bundle-tmp-dir-field").value = data.path;
+      return navigator.clipboard.writeText(data.path);
     })
+    .then(() => { btn.textContent = "Copiado!"; })
+    .catch(() => { btn.textContent = original; })
     .finally(() => {
       btn.disabled = false;
-      btn.textContent = original;
+      setTimeout(() => { btn.textContent = original; }, 1200);
     });
 }
 

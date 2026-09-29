@@ -25,7 +25,7 @@ from .config import settings
 from .extract import _extract_with_dev_cache, extract_book_fields, extract_book_fields_from_isbn
 from .images import IMG_EXTS, load_image_any
 from .listing import compose_listing
-from .models import Book, BookPlatform, Sale
+from .models import Book, BookPlatform, Bundle, BundleItem, BundlePlatform, Sale
 from .platforms import load_platforms
 
 _HEIC_EXTS = {".heic", ".heif"}
@@ -418,6 +418,7 @@ def _sidebar_counts(s) -> dict:
     stock_count = s.execute(
         select(func.count()).select_from(Book).where(Book.status == "available")
     ).scalar_one()
+    bundle_count = s.execute(select(func.count()).select_from(Bundle)).scalar_one()
 
     # For the header progress bar only: a raw pair is one book, a lone
     # unpaired leftover photo is half a book (it's not usable yet, but it's
@@ -435,6 +436,7 @@ def _sidebar_counts(s) -> dict:
         "sorted_count": sorted_count,
         "review_count": review_count,
         "stock_count": stock_count,
+        "bundle_count": bundle_count,
         # book-equivalent count backing raw_pct (may be a half-integer, e.g.
         # "2.5") - shown alongside the percentage on hover; formatted to drop
         # a pointless trailing ".0" for whole numbers.
@@ -1119,21 +1121,83 @@ def bundle_mark_platforms(
     book_ids: list[int] | None = Form(None),
     platforms: list[str] | None = Form(None),
     tmp_photos_dir: str = Form(""),
+    bundle_title: str = Form(""),
 ):
     ids = book_ids or []
     slugs = set(platforms or []) & _known_platform_slugs()
     with db.SessionLocal() as s:
+        # A Bundle row is the actual "this lot got published" record for
+        # /bundles - only worth creating once a platform was actually
+        # chosen, mirroring _add_platforms below skipping a book entirely
+        # when slugs is empty.
+        bundle: Bundle | None = None
+        if slugs:
+            bundle = Bundle(title=bundle_title or None, platforms=[BundlePlatform(platform=slug) for slug in slugs])
         for book_id in ids:
             book = s.get(Book, book_id)
             if book is None or book.status != "available":
                 continue
             _add_platforms(s, book_id, slugs)
+            if bundle is not None:
+                bundle.items.append(
+                    BundleItem(book_id=book.id, title=book.title, author=book.author, price=book.price)
+                )
+        if bundle is not None and bundle.items:
+            s.add(bundle)
         s.commit()
     if tmp_photos_dir:
         path = Path(tmp_photos_dir)
         if _is_bundle_tmp_dir(path):
             shutil.rmtree(path, ignore_errors=True)
     return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
+
+
+@app.get("/bundles", response_class=HTMLResponse)
+def bundle_history(request: Request):
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        bundles = s.execute(select(Bundle).order_by(Bundle.created_at.desc())).scalars().all()
+        platforms_by_slug = {p.slug: p for p in load_platforms()}
+
+        bundle_rows = []
+        for bundle in bundles:
+            item_rows = []
+            for item in bundle.items:
+                book = s.get(Book, item.book_id) if item.book_id else None
+                if book is None:
+                    status = "removido"
+                elif book.status == "available":
+                    status = "disponivel"
+                else:
+                    status = "vendido"
+                item_rows.append({
+                    "title": item.title,
+                    "author": item.author,
+                    "price": item.price,
+                    "photo_url": f"/photo/{item.book_id}/cover.jpg" if book else None,
+                    "status": status,
+                })
+            available = sum(1 for r in item_rows if r["status"] == "disponivel")
+            bundle_rows.append({
+                "id": bundle.id,
+                "title": bundle.title,
+                "created_at": bundle.created_at,
+                "platform_slugs": [bp.platform for bp in bundle.platforms],
+                "books": item_rows,
+                "available_count": available,
+                "total_count": len(item_rows),
+            })
+
+        return templates.TemplateResponse(
+            request,
+            "bundles.html",
+            {
+                **ctx,
+                "active_step": "bundles",
+                "bundles": bundle_rows,
+                "platform_by_slug": platforms_by_slug,
+            },
+        )
 
 
 @app.get("/photo/{book_id}/{name}")
