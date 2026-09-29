@@ -144,6 +144,20 @@
   .action-status.success { color: var(--green-dark); }
   .action-status.error { color: #c92a2a; }
 
+  /* A small segmented control, e.g. /stock's estado-vs-autor tabs and the
+     dashboard's activity-chart series toggle. Shared across templates. */
+  .tab-group { display: flex; gap: 0.4rem; }
+  .tab-btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .tab-btn.active { background: var(--green); border-color: var(--green); color: #fff; }
+
   /* Shared by any other page-specific stacked bar (review queue, stock) -
      same look as .progress-bar/.progress-legend above, but with plain <div>
      segments instead of <a> ones, since these don't link to other pages. */
