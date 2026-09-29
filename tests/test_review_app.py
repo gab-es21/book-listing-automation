@@ -1894,6 +1894,16 @@ def test_bundle_page_shows_select_all_checkbox_per_author(temp_db):
     assert 'onchange="toggleAuthorGroup(this)"' in r.text
 
 
+def test_bundle_page_has_generated_title_field_wired(temp_db):
+    _add_book(temp_db, folder_path="book_b5b", status="available", title="Solo", author="Some Author", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'id="bundle-title"' in r.text
+    assert "function computeBundleTitle(books, sharedAuthor)" in r.text
+    assert "copyBundleField('bundle-title', this)" in r.text
+
+
 def test_bundle_page_shows_existing_platform_badge_on_an_already_bundled_book(temp_db):
     _add_book(
         temp_db, folder_path="book_b6", status="available", title="Already Posted", price=5.0,

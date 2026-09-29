@@ -3,15 +3,15 @@
 {% block extra_style %}
   .bundle-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; align-items: start; }
 
-  .bundle-general textarea, .bundle-preview textarea {
+  .bundle-general textarea, .bundle-preview textarea, .bundle-preview input {
     width: 100%;
     font-family: inherit;
     font-size: 0.9rem;
     padding: 0.6rem 0.7rem;
     border: 1px solid var(--border);
     border-radius: 6px;
-    resize: vertical;
   }
+  .bundle-general textarea, .bundle-preview textarea { resize: vertical; }
   .bundle-general textarea { height: 4rem; }
   .bundle-preview textarea { height: 14rem; }
   .bundle-field-row { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 1rem; }
@@ -122,10 +122,16 @@ Tenho mais livros à venda.</textarea>
     </div>
 
     <div class="card bundle-preview" style="margin-top: 1.5rem;">
+      <h3>Título do anúncio</h3>
+      <div class="bundle-field-row">
+        <input id="bundle-title" type="text" readonly>
+        <button type="button" class="copy" onclick="copyBundleField('bundle-title', this)">Copiar</button>
+      </div>
+
       <h3>Descrição completa</h3>
       <div class="bundle-field-row">
         <textarea id="bundle-preview" readonly></textarea>
-        <button type="button" class="copy" onclick="copyBundlePreview(this)">Copiar</button>
+        <button type="button" class="copy" onclick="copyBundleField('bundle-preview', this)">Copiar</button>
       </div>
 
       <h3>Marcar como publicado em</h3>
@@ -164,12 +170,13 @@ function regenerateBundleText() {
   const subtotal = books.reduce((sum, b) => sum + (b.price || 0), 0);
   document.getElementById("bundle-subtotal").textContent = subtotal.toFixed(2);
 
+  const authors = new Set(books.map((b) => b.author));
+  const sharedAuthor = books.length && authors.size === 1 ? [...authors][0] : null;
+
   const general = document.getElementById("bundle-general").value.trim();
   const lines = [general, ""];
 
   if (books.length) {
-    const authors = new Set(books.map((b) => b.author));
-    const sharedAuthor = authors.size === 1 ? [...authors][0] : null;
     if (sharedAuthor) {
       lines.push(sharedAuthor);
       for (const b of books) {
@@ -183,7 +190,25 @@ function regenerateBundleText() {
   }
 
   document.getElementById("bundle-preview").value = lines.join("\n");
+  document.getElementById("bundle-title").value = computeBundleTitle(books, sharedAuthor);
   syncAuthorSelectAllCheckboxes();
+}
+
+// A short, content-based title ready to paste as the post's own title -
+// Marketplace/OLX still show a single title field even for a grouped post.
+function computeBundleTitle(books, sharedAuthor) {
+  if (books.length === 0) return "";
+  if (books.length === 1) {
+    const b = books[0];
+    return b.author ? `${b.title} - ${b.author}` : b.title;
+  }
+  if (sharedAuthor) {
+    return `Lote de ${books.length} livros - ${sharedAuthor}`;
+  }
+  const maxTitles = 3;
+  const shown = books.slice(0, maxTitles).map((b) => b.title).join(" + ");
+  const rest = books.length - maxTitles;
+  return rest > 0 ? `${shown} + outros ${rest}` : shown;
 }
 
 function toggleAuthorGroup(selectAllCheckbox) {
@@ -206,8 +231,8 @@ function syncAuthorSelectAllCheckboxes() {
   });
 }
 
-function copyBundlePreview(btn) {
-  const el = document.getElementById("bundle-preview");
+function copyBundleField(id, btn) {
+  const el = document.getElementById(id);
   navigator.clipboard.writeText(el.value).then(() => {
     const original = btn.textContent;
     btn.textContent = "Copiado!";
