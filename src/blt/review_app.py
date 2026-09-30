@@ -1067,12 +1067,8 @@ def _new_bundle_tmp_dir() -> Path:
 
 
 def _safe_filename(name: str | None) -> str:
-    """A short, filesystem-safe basename for a cover copy - os.path.basename
-    on top of the character strip is redundant in practice (no separator
-    survives the regex), but it's the idiom static analysis recognizes as
-    conclusively ruling out this value carrying any directory component."""
     cleaned = re.sub(r'[<>:"/\\|?*]', "", name).strip() if name else ""
-    return os.path.basename(cleaned[:60])
+    return cleaned[:60]
 
 
 def _grouped_cover_path(book: Book) -> Path | None:
@@ -1104,7 +1100,11 @@ def bundle_prepare_photos(book_ids: list[int] | None = Form(None)):
             if cover is None:
                 continue
             safe_title = _safe_filename(book.title) or f"livro {book_id}"
-            shutil.copyfile(cover, tmp_dir / f"{i:02d} - {safe_title}.jpg")
+            # os.path.basename immediately before the sink, not hidden a call
+            # away inside _safe_filename - CodeQL's path-injection query only
+            # recognizes it as clearing taint when it's the very last step.
+            filename = os.path.basename(f"{i:02d} - {safe_title}.jpg")
+            shutil.copyfile(cover, tmp_dir / filename)
     return {"path": str(tmp_dir.resolve())}
 
 
