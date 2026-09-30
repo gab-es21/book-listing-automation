@@ -1290,6 +1290,14 @@ def test_stock_list_shows_available_books(temp_db):
     assert ">3<" in r.text
 
 
+def test_stock_list_shows_a_cover_thumbnail_per_book(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_thumb", title="Thumbnail Book", status="available")
+
+    r = client.get("/stock")
+
+    assert f'src="/photo/{book_id}/cover.jpg" alt="" class="stock-thumb"' in r.text
+
+
 def test_stock_edit_price_field_uses_whole_euro_stepper_not_native_spin(temp_db):
     book_id = _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", price=6.0)
 
