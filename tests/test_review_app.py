@@ -2012,21 +2012,39 @@ def test_cleanup_stale_bundle_tmp_dirs_removes_old_but_keeps_fresh_and_unrelated
     assert unrelated.exists()  # old, but not ours to touch - wrong prefix
 
 
-def test_is_bundle_tmp_dir_true_only_for_our_pattern_inside_root(tmp_path, monkeypatch):
+def test_resolve_bundle_tmp_dir_accepts_only_our_own_name_pattern(tmp_path, monkeypatch):
     monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
-    ours = tmp_path / "bundle_20260101_000000_000000"
-    wrong_prefix = tmp_path / "not_bundle_prefixed"
-    outside_root = tmp_path.parent / "bundle_evil"
-    ours.mkdir()
-    wrong_prefix.mkdir()
 
-    assert review_app._is_bundle_tmp_dir(ours) is True
-    assert review_app._is_bundle_tmp_dir(wrong_prefix) is False
-    assert review_app._is_bundle_tmp_dir(outside_root) is False
+    assert review_app._resolve_bundle_tmp_dir(str(tmp_path / "bundle_20260101_000000_000000")) == (
+        tmp_path / "bundle_20260101_000000_000000"
+    )
+    assert review_app._resolve_bundle_tmp_dir(str(tmp_path / "not_bundle_prefixed")) is None
+    assert review_app._resolve_bundle_tmp_dir("bundle_evil") is None
+
+
+def test_resolve_bundle_tmp_dir_ignores_the_submitted_directory_and_rebuilds_under_our_own_root(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+
+    # whatever directory the client claims the folder lives in is discarded
+    # entirely - only the bare final name is kept, and the real path is
+    # rebuilt fresh under our own trusted root, never wherever they pointed.
+    resolved = review_app._resolve_bundle_tmp_dir("/some/other/place/bundle_20260101_000000_000000")
+
+    assert resolved == tmp_path / "bundle_20260101_000000_000000"
+
+
+def test_resolve_bundle_tmp_dir_rejects_path_traversal_attempts(tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+
+    assert review_app._resolve_bundle_tmp_dir("../../etc/passwd") is None
+    assert review_app._resolve_bundle_tmp_dir("bundle_20260101_000000_000000/../../etc") is None
 
 
 def test_bundle_prepare_photos_copies_selected_available_book_covers(temp_db, tmp_path, monkeypatch):
     monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+    monkeypatch.setattr(review_app.settings, "GROUPED_DIR", str(tmp_path))
     folder = tmp_path / "book_cover_src"
     _make_book_cover(folder)
     book_id = _add_book(temp_db, folder_path=str(folder), status="available", title="A Villa", price=5.0)
@@ -2082,11 +2100,11 @@ def test_bundle_mark_platforms_deletes_the_matching_tmp_dir(temp_db, tmp_path, m
     assert not tmp_dir.exists()
 
 
-def test_bundle_mark_platforms_refuses_to_delete_a_path_outside_tmp_root(temp_db, tmp_path, monkeypatch):
+def test_bundle_mark_platforms_ignores_the_directory_part_of_a_submitted_path(temp_db, tmp_path, monkeypatch):
     real_root = tmp_path / "root"
     real_root.mkdir()
     monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: real_root)
-    outside = tmp_path / "outside" / "bundle_evil"
+    outside = tmp_path / "outside" / "bundle_20260101_000000_000000"
     outside.mkdir(parents=True)
     (outside / "marker.txt").write_bytes(b"do not delete")
     book_id = _add_book(temp_db, folder_path="book_safety1", status="available", title="Safety", price=5.0)
@@ -2096,6 +2114,10 @@ def test_bundle_mark_platforms_refuses_to_delete_a_path_outside_tmp_root(temp_db
         data={"book_ids": [book_id], "platforms": ["olx"], "tmp_photos_dir": str(outside)},
     )
 
+    # only the bare name the client submitted is ever trusted - the actual
+    # deletion target is rebuilt fresh under our own root, where nothing by
+    # that name exists here, so the directory the client pointed at (however
+    # named) is never touched.
     assert outside.exists()
     assert (outside / "marker.txt").exists()
 

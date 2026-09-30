@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePath
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -1031,6 +1031,11 @@ def delete_book(book_id: int):
 
 _BUNDLE_TMP_PREFIX = "bundle_"
 _BUNDLE_TMP_MAX_AGE_SECONDS = 3600
+# Exactly the shape _new_bundle_tmp_dir generates below - nothing else is
+# ever accepted as a folder name, so a path is only ever built from a
+# client-submitted value after it's been reduced to its bare final path
+# component and matched against this in full, never from the value itself.
+_BUNDLE_TMP_NAME_RE = re.compile(rf"^{re.escape(_BUNDLE_TMP_PREFIX)}\d{{8}}_\d{{6}}_\d{{6}}$")
 
 
 def _bundle_tmp_root() -> Path:
@@ -1056,20 +1061,39 @@ def _new_bundle_tmp_dir() -> Path:
     return path
 
 
-def _is_bundle_tmp_dir(path: Path) -> bool:
-    """Safety check before ever deleting a client-submitted path: it must
-    resolve to directly inside our own tmp root and match our own naming
-    pattern - never anything else, however it got submitted."""
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return False
-    return resolved.parent == _bundle_tmp_root().resolve() and resolved.name.startswith(_BUNDLE_TMP_PREFIX)
+def _resolve_bundle_tmp_dir(submitted_path: str) -> Path | None:
+    """Turns a client-submitted path back into a directory to delete,
+    without ever using the submitted value as a path itself: only its bare
+    final component is kept, and that's rejected outright unless it matches
+    our own generated name shape exactly - the actual Path is then built
+    fresh from our own trusted root, so nothing attacker-controlled ever
+    reaches the filesystem as part of a path."""
+    name = PurePath(submitted_path).name
+    if not _BUNDLE_TMP_NAME_RE.fullmatch(name):
+        return None
+    return _bundle_tmp_root() / name
 
 
 def _safe_filename(name: str | None) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*]', "", name).strip() if name else ""
     return cleaned[:60]
+
+
+def _grouped_cover_path(book: Book) -> Path | None:
+    """A book's cover.jpg, resolved and confirmed to actually live inside
+    GROUPED_DIR before anything ever reads it - folder_path is a trusted,
+    server-generated column in practice (group_photos.py's own book_NNN
+    naming), but this is the same request path a database inconsistency or
+    a future bug would need to slip through, so it's worth confirming
+    rather than assuming."""
+    try:
+        cover = (Path(book.folder_path) / "cover.jpg").resolve()
+        grouped_root = Path(settings.GROUPED_DIR).resolve()
+    except OSError:
+        return None
+    if not cover.is_relative_to(grouped_root):
+        return None
+    return cover if cover.exists() else None
 
 
 @app.post("/bundle/prepare-photos")
@@ -1080,8 +1104,8 @@ def bundle_prepare_photos(book_ids: list[int] | None = Form(None)):
             book = s.get(Book, book_id)
             if book is None or book.status != "available":
                 continue
-            cover = Path(book.folder_path) / "cover.jpg"
-            if not cover.exists():
+            cover = _grouped_cover_path(book)
+            if cover is None:
                 continue
             safe_title = _safe_filename(book.title) or f"livro {book_id}"
             shutil.copyfile(cover, tmp_dir / f"{i:02d} - {safe_title}.jpg")
@@ -1146,9 +1170,9 @@ def bundle_mark_platforms(
             s.add(bundle)
         s.commit()
     if tmp_photos_dir:
-        path = Path(tmp_photos_dir)
-        if _is_bundle_tmp_dir(path):
-            shutil.rmtree(path, ignore_errors=True)
+        tmp_dir = _resolve_bundle_tmp_dir(tmp_photos_dir)
+        if tmp_dir is not None:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
 
 
