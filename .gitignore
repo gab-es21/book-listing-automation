@@ -5,6 +5,7 @@ __pycache__/
 .env.*.local
 photos_raw/
 photos_grouped/
+bundle_tmp/
 selenium-screenshots/
 src/blt.egg-info/
 *.egg-info/

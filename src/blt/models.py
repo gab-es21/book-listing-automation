@@ -65,3 +65,42 @@ class Sale(Base):
     # cross-posted (nothing to disambiguate) or for sales recorded before
     # this column existed.
     platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+# One "lote" (Marketplace/OLX grouped listing) per /bundle "Marcar
+# selecionados" click - records which books were grouped and where, so
+# /bundles can look back at what was published. Deliberately stores no
+# sold/available state of its own: that's always read live from each item's
+# Book row, the same single source of truth /stock already uses, so selling
+# a book individually is reflected here automatically with no sync step.
+class Bundle(Base):
+    __tablename__ = "bundles"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    items: Mapped[list["BundleItem"]] = relationship(cascade="all, delete-orphan")
+    platforms: Mapped[list["BundlePlatform"]] = relationship(cascade="all, delete-orphan")
+
+
+# One row per book included in a Bundle - snapshots title/author/price at
+# the time of bundling (same reasoning as Sale: the lot's history survives
+# the Book row being deleted later), while book_id is what lets a live
+# available/sold status be looked up for as long as the book still exists.
+class BundleItem(Base):
+    __tablename__ = "bundle_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bundle_id: Mapped[int] = mapped_column(ForeignKey("bundles.id"))
+    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id"), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# Which platform(s) a Bundle went out on - same shape as BookPlatform, kept
+# as its own table since these rows belong to a Bundle, not a Book.
+class BundlePlatform(Base):
+    __tablename__ = "bundle_platforms"
+    __table_args__ = (UniqueConstraint("bundle_id", "platform"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bundle_id: Mapped[int] = mapped_column(ForeignKey("bundles.id"))
+    platform: Mapped[str] = mapped_column(String(32))
