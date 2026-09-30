@@ -2033,7 +2033,7 @@ def test_bundle_prepare_photos_copies_selected_available_book_covers(temp_db, tm
     assert created.is_dir()
     files = list(created.iterdir())
     assert len(files) == 1
-    assert "A Villa" in files[0].name
+    assert files[0].name == "01.jpg"
 
 
 def test_bundle_prepare_photos_skips_non_available_and_missing_cover(temp_db, tmp_path, monkeypatch):

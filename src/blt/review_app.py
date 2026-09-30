@@ -4,9 +4,7 @@ always reachable from a persistent sidebar: raw images -> sorted images ->
 detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
-import os
 import random
-import re
 import shutil
 import threading
 import time
@@ -1066,11 +1064,6 @@ def _new_bundle_tmp_dir() -> Path:
     return path
 
 
-def _safe_filename(name: str | None) -> str:
-    cleaned = re.sub(r'[<>:"/\\|?*]', "", name).strip() if name else ""
-    return cleaned[:60]
-
-
 def _grouped_cover_path(book: Book) -> Path | None:
     """A book's cover.jpg, resolved and confirmed to actually live inside
     GROUPED_DIR before anything ever reads it - folder_path is a trusted,
@@ -1099,12 +1092,11 @@ def bundle_prepare_photos(book_ids: list[int] | None = Form(None)):
             cover = _grouped_cover_path(book)
             if cover is None:
                 continue
-            safe_title = _safe_filename(book.title) or f"livro {book_id}"
-            # os.path.basename immediately before the sink, not hidden a call
-            # away inside _safe_filename - CodeQL's path-injection query only
-            # recognizes it as clearing taint when it's the very last step.
-            filename = os.path.basename(f"{i:02d} - {safe_title}.jpg")
-            shutil.copyfile(cover, tmp_dir / filename)
+            # Numbered only, never book-derived text (a title is user-editable
+            # free text) - the loop position is all that's needed to tell the
+            # covers apart while browsing the OS file picker, which shows
+            # image thumbnails anyway.
+            shutil.copyfile(cover, tmp_dir / f"{i:02d}.jpg")
     return {"path": str(tmp_dir.resolve())}
 
 
