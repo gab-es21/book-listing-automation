@@ -17,6 +17,8 @@
   th a { color: #1a1a1a; text-decoration: none; }
   th a:hover { color: var(--green-dark); }
 
+  .stock-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); display: block; }
+
   button.sold {
     background: #fff;
     border: 1px solid var(--border);
@@ -185,6 +187,7 @@
   <div class="table-wrap {{ 'scroll' if view == 'all' else '' }}">
   <table>
     <tr>
+      <th></th>
       <th>{{ sort_link('title', 'Título') }}</th>
       <th>{{ sort_link('author', 'Autor') }}</th>
       <th>{{ sort_link('isbn', 'ISBN') }}</th>
@@ -196,6 +199,7 @@
     </tr>
     {% for book in books %}
     <tr class="{{ 'sold-out' if book.status == 'sold_out' else '' }}">
+      <td><img src="/photo/{{ book.id }}/cover.jpg" alt="" class="stock-thumb" onerror="this.remove()"></td>
       <td>{{ book.title or "(sem título)" }}</td>
       <td>{{ book.author or "-" }}</td>
       <td>{{ book.isbn or "-" }}</td>
@@ -240,7 +244,7 @@
       </td>
     </tr>
     <tr class="edit-row" id="edit-row-{{ book.id }}" style="display: none;">
-      <td colspan="8">
+      <td colspan="9">
         <form method="post" action="/stock/edit/{{ book.id }}" class="edit-form">
           <div class="edit-field title-field">
             <label for="edit-title-{{ book.id }}">Título</label>
