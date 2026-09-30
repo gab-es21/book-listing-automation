@@ -4,6 +4,7 @@ always reachable from a persistent sidebar: raw images -> sorted images ->
 detected book waiting confirmation -> stock. Nothing here talks to Vinted -
 you paste the fields yourself and click Next once the real listing exists.
 """
+import os
 import random
 import re
 import shutil
@@ -11,7 +12,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path, PurePath
+from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -1031,11 +1032,13 @@ def delete_book(book_id: int):
 
 _BUNDLE_TMP_PREFIX = "bundle_"
 _BUNDLE_TMP_MAX_AGE_SECONDS = 3600
-# Exactly the shape _new_bundle_tmp_dir generates below - nothing else is
-# ever accepted as a folder name, so a path is only ever built from a
-# client-submitted value after it's been reduced to its bare final path
-# component and matched against this in full, never from the value itself.
-_BUNDLE_TMP_NAME_RE = re.compile(rf"^{re.escape(_BUNDLE_TMP_PREFIX)}\d{{8}}_\d{{6}}_\d{{6}}$")
+
+# The single most-recently-created covers folder, if any hasn't been cleaned
+# up yet - single-user, single-session app, so a plain module-level slot is
+# enough (same pattern as _bulk_reextract_state above). Never built from a
+# client-submitted path: /bundle/mark-platforms deletes exactly this, so a
+# request can never point deletion at an arbitrary filesystem location.
+_pending_bundle_tmp_dir: Path | None = None
 
 
 def _bundle_tmp_root() -> Path:
@@ -1054,29 +1057,22 @@ def _cleanup_stale_bundle_tmp_dirs() -> None:
 
 
 def _new_bundle_tmp_dir() -> Path:
+    global _pending_bundle_tmp_dir
     _cleanup_stale_bundle_tmp_dirs()
     name = f"{_BUNDLE_TMP_PREFIX}{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     path = _bundle_tmp_root() / name
     path.mkdir(parents=True)
+    _pending_bundle_tmp_dir = path
     return path
 
 
-def _resolve_bundle_tmp_dir(submitted_path: str) -> Path | None:
-    """Turns a client-submitted path back into a directory to delete,
-    without ever using the submitted value as a path itself: only its bare
-    final component is kept, and that's rejected outright unless it matches
-    our own generated name shape exactly - the actual Path is then built
-    fresh from our own trusted root, so nothing attacker-controlled ever
-    reaches the filesystem as part of a path."""
-    name = PurePath(submitted_path).name
-    if not _BUNDLE_TMP_NAME_RE.fullmatch(name):
-        return None
-    return _bundle_tmp_root() / name
-
-
 def _safe_filename(name: str | None) -> str:
+    """A short, filesystem-safe basename for a cover copy - os.path.basename
+    on top of the character strip is redundant in practice (no separator
+    survives the regex), but it's the idiom static analysis recognizes as
+    conclusively ruling out this value carrying any directory component."""
     cleaned = re.sub(r'[<>:"/\\|?*]', "", name).strip() if name else ""
-    return cleaned[:60]
+    return os.path.basename(cleaned[:60])
 
 
 def _grouped_cover_path(book: Book) -> Path | None:
@@ -1144,9 +1140,9 @@ def bundle_page(request: Request, marked: int = 0):
 def bundle_mark_platforms(
     book_ids: list[int] | None = Form(None),
     platforms: list[str] | None = Form(None),
-    tmp_photos_dir: str = Form(""),
     bundle_title: str = Form(""),
 ):
+    global _pending_bundle_tmp_dir
     ids = book_ids or []
     slugs = set(platforms or []) & _known_platform_slugs()
     with db.SessionLocal() as s:
@@ -1169,10 +1165,9 @@ def bundle_mark_platforms(
         if bundle is not None and bundle.items:
             s.add(bundle)
         s.commit()
-    if tmp_photos_dir:
-        tmp_dir = _resolve_bundle_tmp_dir(tmp_photos_dir)
-        if tmp_dir is not None:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+    if _pending_bundle_tmp_dir is not None:
+        shutil.rmtree(_pending_bundle_tmp_dir, ignore_errors=True)
+        _pending_bundle_tmp_dir = None
     return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
 
 

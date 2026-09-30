@@ -1982,7 +1982,6 @@ def test_bundle_page_has_photos_folder_button_wired(temp_db):
     assert "Criar e copiar pasta de capas" in r.text
     assert "function prepareBundlePhotos(btn)" in r.text
     assert "navigator.clipboard.writeText(data.path)" in r.text
-    assert 'name="tmp_photos_dir"' in r.text
     assert 'id="bundle-photos-dir"' in r.text
 
 
@@ -2012,34 +2011,12 @@ def test_cleanup_stale_bundle_tmp_dirs_removes_old_but_keeps_fresh_and_unrelated
     assert unrelated.exists()  # old, but not ours to touch - wrong prefix
 
 
-def test_resolve_bundle_tmp_dir_accepts_only_our_own_name_pattern(tmp_path, monkeypatch):
+def test_new_bundle_tmp_dir_tracks_itself_as_pending(tmp_path, monkeypatch):
     monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
 
-    assert review_app._resolve_bundle_tmp_dir(str(tmp_path / "bundle_20260101_000000_000000")) == (
-        tmp_path / "bundle_20260101_000000_000000"
-    )
-    assert review_app._resolve_bundle_tmp_dir(str(tmp_path / "not_bundle_prefixed")) is None
-    assert review_app._resolve_bundle_tmp_dir("bundle_evil") is None
+    created = review_app._new_bundle_tmp_dir()
 
-
-def test_resolve_bundle_tmp_dir_ignores_the_submitted_directory_and_rebuilds_under_our_own_root(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
-
-    # whatever directory the client claims the folder lives in is discarded
-    # entirely - only the bare final name is kept, and the real path is
-    # rebuilt fresh under our own trusted root, never wherever they pointed.
-    resolved = review_app._resolve_bundle_tmp_dir("/some/other/place/bundle_20260101_000000_000000")
-
-    assert resolved == tmp_path / "bundle_20260101_000000_000000"
-
-
-def test_resolve_bundle_tmp_dir_rejects_path_traversal_attempts(tmp_path, monkeypatch):
-    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
-
-    assert review_app._resolve_bundle_tmp_dir("../../etc/passwd") is None
-    assert review_app._resolve_bundle_tmp_dir("bundle_20260101_000000_000000/../../etc") is None
+    assert review_app._pending_bundle_tmp_dir == created
 
 
 def test_bundle_prepare_photos_copies_selected_available_book_covers(temp_db, tmp_path, monkeypatch):
@@ -2085,57 +2062,28 @@ def test_bundle_prepare_photos_runs_stale_cleanup_as_a_side_effect(temp_db, tmp_
     assert not stale.exists()
 
 
-def test_bundle_mark_platforms_deletes_the_matching_tmp_dir(temp_db, tmp_path, monkeypatch):
-    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+def test_bundle_mark_platforms_deletes_the_pending_tmp_dir(temp_db, tmp_path, monkeypatch):
     tmp_dir = tmp_path / "bundle_20260101_000000_000000"
     tmp_dir.mkdir()
     (tmp_dir / "01 - Book.jpg").write_bytes(b"x")
+    monkeypatch.setattr(review_app, "_pending_bundle_tmp_dir", tmp_dir)
     book_id = _add_book(temp_db, folder_path="book_cleanup", status="available", title="Cleanup Me", price=5.0)
 
-    client.post(
-        "/bundle/mark-platforms",
-        data={"book_ids": [book_id], "platforms": ["olx"], "tmp_photos_dir": str(tmp_dir)},
-    )
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
 
     assert not tmp_dir.exists()
+    assert review_app._pending_bundle_tmp_dir is None
 
 
-def test_bundle_mark_platforms_ignores_the_directory_part_of_a_submitted_path(temp_db, tmp_path, monkeypatch):
-    real_root = tmp_path / "root"
-    real_root.mkdir()
-    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: real_root)
-    outside = tmp_path / "outside" / "bundle_20260101_000000_000000"
-    outside.mkdir(parents=True)
-    (outside / "marker.txt").write_bytes(b"do not delete")
-    book_id = _add_book(temp_db, folder_path="book_safety1", status="available", title="Safety", price=5.0)
+def test_bundle_mark_platforms_with_no_pending_tmp_dir_does_nothing(temp_db):
+    # default state (nothing created via "Criar e copiar pasta de capas" this
+    # session) - marking platforms must not error just because there's
+    # nothing to clean up.
+    book_id = _add_book(temp_db, folder_path="book_no_pending", status="available", title="No Pending", price=5.0)
 
-    client.post(
-        "/bundle/mark-platforms",
-        data={"book_ids": [book_id], "platforms": ["olx"], "tmp_photos_dir": str(outside)},
-    )
+    r = client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
 
-    # only the bare name the client submitted is ever trusted - the actual
-    # deletion target is rebuilt fresh under our own root, where nothing by
-    # that name exists here, so the directory the client pointed at (however
-    # named) is never touched.
-    assert outside.exists()
-    assert (outside / "marker.txt").exists()
-
-
-def test_bundle_mark_platforms_refuses_to_delete_a_dir_with_wrong_prefix(temp_db, tmp_path, monkeypatch):
-    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
-    wrong_prefix = tmp_path / "not_bundle_prefixed"
-    wrong_prefix.mkdir()
-    (wrong_prefix / "marker.txt").write_bytes(b"do not delete")
-    book_id = _add_book(temp_db, folder_path="book_safety2", status="available", title="Safety 2", price=5.0)
-
-    client.post(
-        "/bundle/mark-platforms",
-        data={"book_ids": [book_id], "platforms": ["olx"], "tmp_photos_dir": str(wrong_prefix)},
-    )
-
-    assert wrong_prefix.exists()
-    assert (wrong_prefix / "marker.txt").exists()
+    assert r.status_code == 200  # redirect followed by the default TestClient behavior
 
 
 # -------- Bundle history (/bundles) --------

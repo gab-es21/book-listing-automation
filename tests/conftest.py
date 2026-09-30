@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from blt import db
+from blt import db, review_app
 from blt.models import Base
 
 
@@ -15,3 +15,13 @@ def temp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "engine", engine)
     monkeypatch.setattr(db, "SessionLocal", session_factory)
     return session_factory
+
+
+@pytest.fixture(autouse=True)
+def _reset_bundle_tmp_dir_state():
+    """_pending_bundle_tmp_dir is process-global (single-user app, no request
+    to scope it to) - reset around every test so one test's /bundle calls
+    can't leak state into an unrelated one."""
+    review_app._pending_bundle_tmp_dir = None
+    yield
+    review_app._pending_bundle_tmp_dir = None

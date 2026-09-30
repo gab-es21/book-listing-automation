@@ -156,7 +156,6 @@ Tenho mais livros à venda.</textarea>
         <input id="bundle-photos-dir" type="text" readonly placeholder="Ainda não criada">
       </div>
       <button type="button" class="secondary bundle-photos-btn" onclick="prepareBundlePhotos(this)">Criar e copiar pasta de capas</button>
-      <input type="hidden" name="tmp_photos_dir" id="bundle-tmp-dir-field" value="">
       <input type="hidden" name="bundle_title" id="bundle-title-field" value="">
 
       <h3>Marcar como publicado em</h3>
@@ -283,7 +282,6 @@ function prepareBundlePhotos(btn) {
     .then((r) => r.json())
     .then((data) => {
       document.getElementById("bundle-photos-dir").value = data.path;
-      document.getElementById("bundle-tmp-dir-field").value = data.path;
       return navigator.clipboard.writeText(data.path);
     })
     .then(() => { btn.textContent = "Copiado!"; })
