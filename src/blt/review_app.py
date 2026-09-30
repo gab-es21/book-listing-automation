@@ -24,7 +24,7 @@ from .config import settings
 from .extract import _extract_with_dev_cache, extract_book_fields, extract_book_fields_from_isbn
 from .images import IMG_EXTS, load_image_any
 from .listing import compose_listing
-from .models import Book, BookPlatform, Sale
+from .models import Book, BookPlatform, Bundle, BundleItem, BundlePlatform, Sale
 from .platforms import load_platforms
 
 _HEIC_EXTS = {".heic", ".heif"}
@@ -417,6 +417,7 @@ def _sidebar_counts(s) -> dict:
     stock_count = s.execute(
         select(func.count()).select_from(Book).where(Book.status == "available")
     ).scalar_one()
+    bundle_count = s.execute(select(func.count()).select_from(Bundle)).scalar_one()
 
     # For the header progress bar only: a raw pair is one book, a lone
     # unpaired leftover photo is half a book (it's not usable yet, but it's
@@ -434,6 +435,7 @@ def _sidebar_counts(s) -> dict:
         "sorted_count": sorted_count,
         "review_count": review_count,
         "stock_count": stock_count,
+        "bundle_count": bundle_count,
         # book-equivalent count backing raw_pct (may be a half-integer, e.g.
         # "2.5") - shown alongside the percentage on hover; formatted to drop
         # a pointless trailing ".0" for whole numbers.
@@ -1008,6 +1010,205 @@ def delete_book(book_id: int):
         s.delete(book)
         s.commit()
     return RedirectResponse("/stock", status_code=303)
+
+
+# -------- Bundle listings (grouped posts for Marketplace/OLX) --------
+#
+# Vinted only accepts one book per listing, but Marketplace/OLX accept a
+# single post covering several books - this lets you hand-pick a few
+# already-in-stock books (any author mix) and get a ready-to-paste grouped
+# description, then optionally flag those books as cross-posted to whichever
+# platform(s) you used. Composition itself happens client-side in bundle.html
+# (the book data is already on the page for the checkboxes) - nothing here
+# generates text, this only serves the picker and records the platform flags.
+#
+# OLX's upload dialog only lets you browse for files (no drag-and-drop from
+# the page the way Vinted's does), so there's no way to hand it images
+# straight from wherever each book's own book_NNN folder happens to live -
+# "Criar pasta de capas" instead copies just the selected covers into one
+# throwaway folder you can point that dialog's browse-for-files box at.
+
+_BUNDLE_TMP_PREFIX = "bundle_"
+_BUNDLE_TMP_MAX_AGE_SECONDS = 3600
+
+# The single most-recently-created covers folder, if any hasn't been cleaned
+# up yet - single-user, single-session app, so a plain module-level slot is
+# enough (same pattern as _bulk_reextract_state above). Never built from a
+# client-submitted path: /bundle/mark-platforms deletes exactly this, so a
+# request can never point deletion at an arbitrary filesystem location.
+_pending_bundle_tmp_dir: Path | None = None
+
+
+def _bundle_tmp_root() -> Path:
+    return Path(settings.BUNDLE_TMP_DIR)
+
+
+def _cleanup_stale_bundle_tmp_dirs() -> None:
+    """Removes any of our own cover-photo folders older than an hour - a
+    safety net for one a previous session created but never got to clean up
+    itself (e.g. the tab was closed before clicking Marcar selecionados).
+    Runs every time a new one is about to be created."""
+    now = time.time()
+    for entry in _bundle_tmp_root().glob(f"{_BUNDLE_TMP_PREFIX}*"):
+        if entry.is_dir() and now - entry.stat().st_mtime > _BUNDLE_TMP_MAX_AGE_SECONDS:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _new_bundle_tmp_dir() -> Path:
+    global _pending_bundle_tmp_dir
+    _cleanup_stale_bundle_tmp_dirs()
+    name = f"{_BUNDLE_TMP_PREFIX}{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    path = _bundle_tmp_root() / name
+    path.mkdir(parents=True)
+    _pending_bundle_tmp_dir = path
+    return path
+
+
+def _grouped_cover_path(book: Book) -> Path | None:
+    """A book's cover.jpg, resolved and confirmed to actually live inside
+    GROUPED_DIR before anything ever reads it - folder_path is a trusted,
+    server-generated column in practice (group_photos.py's own book_NNN
+    naming), but this is the same request path a database inconsistency or
+    a future bug would need to slip through, so it's worth confirming
+    rather than assuming."""
+    try:
+        cover = (Path(book.folder_path) / "cover.jpg").resolve()
+        grouped_root = Path(settings.GROUPED_DIR).resolve()
+    except OSError:
+        return None
+    if not cover.is_relative_to(grouped_root):
+        return None
+    return cover if cover.exists() else None
+
+
+@app.post("/bundle/prepare-photos")
+def bundle_prepare_photos(book_ids: list[int] | None = Form(None)):
+    tmp_dir = _new_bundle_tmp_dir()
+    with db.SessionLocal() as s:
+        for i, book_id in enumerate(book_ids or [], start=1):
+            book = s.get(Book, book_id)
+            if book is None or book.status != "available":
+                continue
+            cover = _grouped_cover_path(book)
+            if cover is None:
+                continue
+            # Numbered only, never book-derived text (a title is user-editable
+            # free text) - the loop position is all that's needed to tell the
+            # covers apart while browsing the OS file picker, which shows
+            # image thumbnails anyway.
+            shutil.copyfile(cover, tmp_dir / f"{i:02d}.jpg")
+    return {"path": str(tmp_dir.resolve())}
+
+
+@app.get("/bundle", response_class=HTMLResponse)
+def bundle_page(request: Request, marked: int = 0):
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        books = s.execute(
+            select(Book).where(Book.status == "available").order_by(Book.author, Book.title)
+        ).scalars().all()
+        books_by_author: dict[str, list[Book]] = {}
+        for book in books:
+            books_by_author.setdefault(book.author or "Autor desconhecido", []).append(book)
+        platforms = load_platforms()
+        return templates.TemplateResponse(
+            request,
+            "bundle.html",
+            {
+                **ctx,
+                "active_step": "bundle",
+                "books_by_author": books_by_author,
+                "platforms": platforms,
+                # lets a book row show which platform(s) it's already flagged on
+                # (e.g. already in an earlier bundle) - it still shows up here
+                # either way, since you may want to post it to another platform.
+                "platform_by_slug": {p.slug: p for p in platforms},
+                "marked": marked,
+            },
+        )
+
+
+@app.post("/bundle/mark-platforms")
+def bundle_mark_platforms(
+    book_ids: list[int] | None = Form(None),
+    platforms: list[str] | None = Form(None),
+    bundle_title: str = Form(""),
+):
+    global _pending_bundle_tmp_dir
+    ids = book_ids or []
+    slugs = set(platforms or []) & _known_platform_slugs()
+    with db.SessionLocal() as s:
+        # A Bundle row is the actual "this lot got published" record for
+        # /bundles - only worth creating once a platform was actually
+        # chosen, mirroring _add_platforms below skipping a book entirely
+        # when slugs is empty.
+        bundle: Bundle | None = None
+        if slugs:
+            bundle = Bundle(title=bundle_title or None, platforms=[BundlePlatform(platform=slug) for slug in slugs])
+        for book_id in ids:
+            book = s.get(Book, book_id)
+            if book is None or book.status != "available":
+                continue
+            _add_platforms(s, book_id, slugs)
+            if bundle is not None:
+                bundle.items.append(
+                    BundleItem(book_id=book.id, title=book.title, author=book.author, price=book.price)
+                )
+        if bundle is not None and bundle.items:
+            s.add(bundle)
+        s.commit()
+    if _pending_bundle_tmp_dir is not None:
+        shutil.rmtree(_pending_bundle_tmp_dir, ignore_errors=True)
+        _pending_bundle_tmp_dir = None
+    return RedirectResponse(f"/bundle?marked={len(ids)}", status_code=303)
+
+
+@app.get("/bundles", response_class=HTMLResponse)
+def bundle_history(request: Request):
+    with db.SessionLocal() as s:
+        ctx = _sidebar_counts(s)
+        bundles = s.execute(select(Bundle).order_by(Bundle.created_at.desc())).scalars().all()
+        platforms_by_slug = {p.slug: p for p in load_platforms()}
+
+        bundle_rows = []
+        for bundle in bundles:
+            item_rows = []
+            for item in bundle.items:
+                book = s.get(Book, item.book_id) if item.book_id else None
+                if book is None:
+                    status = "removido"
+                elif book.status == "available":
+                    status = "disponivel"
+                else:
+                    status = "vendido"
+                item_rows.append({
+                    "title": item.title,
+                    "author": item.author,
+                    "price": item.price,
+                    "photo_url": f"/photo/{item.book_id}/cover.jpg" if book else None,
+                    "status": status,
+                })
+            available = sum(1 for r in item_rows if r["status"] == "disponivel")
+            bundle_rows.append({
+                "id": bundle.id,
+                "title": bundle.title,
+                "created_at": bundle.created_at,
+                "platform_slugs": [bp.platform for bp in bundle.platforms],
+                "books": item_rows,
+                "available_count": available,
+                "total_count": len(item_rows),
+            })
+
+        return templates.TemplateResponse(
+            request,
+            "bundles.html",
+            {
+                **ctx,
+                "active_step": "bundles",
+                "bundles": bundle_rows,
+                "platform_by_slug": platforms_by_slug,
+            },
+        )
 
 
 @app.get("/photo/{book_id}/{name}")

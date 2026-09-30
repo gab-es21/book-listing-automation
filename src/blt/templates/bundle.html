@@ -1,0 +1,306 @@
+{% extends "_base.html" %}
+{% block title %}blt - lotes{% endblock %}
+{% block extra_style %}
+  .bundle-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; align-items: start; }
+
+  .bundle-general textarea, .bundle-preview textarea, .bundle-preview input {
+    width: 100%;
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .bundle-general textarea, .bundle-preview textarea { resize: vertical; }
+  .bundle-general textarea { height: 4rem; }
+  .bundle-preview textarea { height: 14rem; }
+  .bundle-field-row { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 1rem; }
+  .bundle-field-row button.copy {
+    flex: 0 0 auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .bundle-field-row button.copy:hover { border-color: var(--page-accent); color: var(--page-accent-dark); }
+
+  .bundle-summary { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.9rem; color: var(--muted); }
+  .bundle-summary strong { color: #1a1a1a; }
+
+  .bundle-hint { margin: -0.4rem 0 0.6rem; font-size: 0.82rem; color: var(--muted); }
+  .bundle-photos-btn { margin-bottom: 1.5rem; }
+
+  /* Collapsed by default - the general intro rarely changes between
+     bundles, so it shouldn't compete with the title/description you
+     actually copy every time. */
+  .bundle-general-details { margin-bottom: 1.5rem; }
+  .bundle-general-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1a1a1a;
+  }
+  .bundle-general-details summary:hover { color: var(--page-accent-dark); }
+  .bundle-general-details .bundle-field-row { margin-top: 0.75rem; margin-bottom: 0; }
+
+  .author-group { margin-bottom: 1.25rem; }
+  .author-group h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .author-select-all { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 700; }
+  .bundle-book-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; }
+  .bundle-book-row label { display: flex; align-items: center; gap: 0.6rem; flex: 1; cursor: pointer; }
+  .bundle-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); flex: 0 0 auto; }
+  .bundle-book-title { font-weight: 600; font-size: 0.9rem; }
+  .bundle-book-price { color: var(--muted); font-size: 0.85rem; }
+
+  .platform-icon { width: 12px; height: 12px; }
+  .platform-checks { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .platform-checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; font-weight: 400; }
+
+  /* Already-flagged platforms for a book (e.g. it's in an earlier bundle,
+     or already listed on Vinted) - shown so it's obvious at a glance, but
+     never filters the book out of the picker; you may still want to post
+     it to a different platform too. */
+  .platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #eef1f4;
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>Lotes</h1>
+  <p class="subtitle">Agrupa livros do stock disponível para publicar de uma vez no Marketplace/OLX (o Vinted continua a ser um anúncio por livro).</p>
+</header>
+
+{% if marked %}
+<p class="action-status success">{{ marked }} livro(s) marcado(s) na(s) plataforma(s) escolhida(s).</p>
+{% endif %}
+
+{% if not books_by_author %}
+<div class="card">
+  <p>Ainda não há livros em stock disponível para agrupar.</p>
+</div>
+{% else %}
+<form method="post" action="/bundle/mark-platforms" onsubmit="return confirmMarkPlatforms()">
+<div class="bundle-layout">
+  <div class="card">
+    <h3>Escolher livros</h3>
+    {% for author, books in books_by_author.items() %}
+    <div class="author-group">
+      <h4>
+        <label class="author-select-all">
+          <input type="checkbox" onchange="toggleAuthorGroup(this)">
+          {{ author }}
+        </label>
+      </h4>
+      {% for book in books %}
+      <div class="bundle-book-row">
+        <label>
+          <input type="checkbox" name="book_ids" value="{{ book.id }}"
+                 data-title="{{ book.title or 'Sem título' }}" data-author="{{ book.author or '' }}"
+                 data-price="{{ book.price if book.price is not none else '' }}"
+                 onchange="regenerateBundleText()">
+          <img src="/photo/{{ book.id }}/cover.jpg" alt="" class="bundle-thumb" onerror="this.remove()">
+          <span class="bundle-book-title">{{ book.title or "Sem título" }}</span>
+          <span class="bundle-book-price">{{ "%.2f"|format(book.price) if book.price is not none else "-" }} &euro;</span>
+          {% for bp in book.platforms %}
+          {% set p = platform_by_slug.get(bp.platform) %}
+          <span class="platform-badge">{% if p %}<img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">{{ p.name }}{% else %}{{ bp.platform }}{% endif %}</span>
+          {% endfor %}
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="card bundle-preview">
+      <div class="bundle-summary">
+        <span><strong id="bundle-count">0</strong> selecionado(s)</span>
+        <span>Subtotal: <strong id="bundle-subtotal">0.00</strong> &euro;</span>
+      </div>
+
+      <h3>Título do anúncio</h3>
+      <div class="bundle-field-row">
+        <input id="bundle-title" type="text" readonly>
+        <button type="button" class="copy" onclick="copyBundleField('bundle-title', this)">Copiar</button>
+      </div>
+
+      <h3>Descrição completa</h3>
+      <div class="bundle-field-row">
+        <textarea id="bundle-preview" readonly></textarea>
+        <button type="button" class="copy" onclick="copyBundleField('bundle-preview', this)">Copiar</button>
+      </div>
+
+      <details class="bundle-general-details">
+        <summary>Descrição geral (editar)</summary>
+        <div class="bundle-field-row">
+          <textarea id="bundle-general" oninput="regenerateBundleText()">Lote de livros em bom estado.
+Tenho mais livros à venda.</textarea>
+        </div>
+      </details>
+
+      <h3>Pasta de capas</h3>
+      <p class="bundle-hint">Para quando o site só deixa procurar ficheiros (sem arrastar) - cria uma pasta temporária só com as capas selecionadas e copia logo o caminho, para colares no explorador do popup de upload.</p>
+      <div class="bundle-field-row">
+        <input id="bundle-photos-dir" type="text" readonly placeholder="Ainda não criada">
+      </div>
+      <button type="button" class="secondary bundle-photos-btn" onclick="prepareBundlePhotos(this)">Criar e copiar pasta de capas</button>
+      <input type="hidden" name="bundle_title" id="bundle-title-field" value="">
+
+      <h3>Marcar como publicado em</h3>
+      <div class="platform-checks">
+        {% for p in platforms %}
+        {% if p.slug != "vinted" %}
+        <label>
+          <input type="checkbox" name="platforms" value="{{ p.slug }}">
+          <img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">
+          {{ p.name }}
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <button type="submit" class="primary">Marcar selecionados</button>
+    </div>
+  </div>
+</div>
+</form>
+{% endif %}
+
+<script>
+function formatBundlePrice(price) {
+  return price != null && !Number.isNaN(price) ? `${price.toFixed(2)} €` : "-";
+}
+
+function regenerateBundleText() {
+  const checked = Array.from(document.querySelectorAll('input[name="book_ids"]:checked'));
+  const books = checked.map((cb) => ({
+    title: cb.dataset.title,
+    author: cb.dataset.author || null,
+    price: cb.dataset.price ? parseFloat(cb.dataset.price) : null,
+  }));
+
+  document.getElementById("bundle-count").textContent = books.length;
+  const subtotal = books.reduce((sum, b) => sum + (b.price || 0), 0);
+  document.getElementById("bundle-subtotal").textContent = subtotal.toFixed(2);
+
+  const authors = new Set(books.map((b) => b.author));
+  const sharedAuthor = books.length && authors.size === 1 ? [...authors][0] : null;
+
+  const general = document.getElementById("bundle-general").value.trim();
+  const lines = [general, ""];
+
+  if (books.length) {
+    if (sharedAuthor) {
+      lines.push(sharedAuthor);
+      for (const b of books) {
+        lines.push(`${b.title} - ${formatBundlePrice(b.price)}`);
+      }
+    } else {
+      for (const b of books) {
+        lines.push(`${b.title} - ${b.author || "Autor desconhecido"} - ${formatBundlePrice(b.price)}`);
+      }
+    }
+  }
+
+  const title = computeBundleTitle(books, sharedAuthor);
+  document.getElementById("bundle-preview").value = lines.join("\n");
+  document.getElementById("bundle-title").value = title;
+  document.getElementById("bundle-title-field").value = title;
+  syncAuthorSelectAllCheckboxes();
+}
+
+// A short, content-based title ready to paste as the post's own title -
+// Marketplace/OLX still show a single title field even for a grouped post.
+function computeBundleTitle(books, sharedAuthor) {
+  if (books.length === 0) return "";
+  if (books.length === 1) {
+    const b = books[0];
+    return b.author ? `${b.title} - ${b.author}` : b.title;
+  }
+  if (sharedAuthor) {
+    return `Lote de ${books.length} livros - ${sharedAuthor}`;
+  }
+  const authors = [...new Set(books.map((b) => b.author || "Autor desconhecido"))];
+  const authorsPart = authors.length <= 2
+    ? authors.join(" e ")
+    : `${authors.slice(0, 2).join(", ")} e outros`;
+  return `Lote de ${books.length} livros - ${authorsPart}`;
+}
+
+function toggleAuthorGroup(selectAllCheckbox) {
+  const group = selectAllCheckbox.closest(".author-group");
+  group.querySelectorAll('input[name="book_ids"]').forEach((cb) => { cb.checked = selectAllCheckbox.checked; });
+  regenerateBundleText();
+}
+
+// Keeps each author's "select all" checkbox honest after an individual book
+// is (un)checked directly - ticked when every book under it is selected,
+// indeterminate when only some are, empty when none are.
+function syncAuthorSelectAllCheckboxes() {
+  document.querySelectorAll(".author-group").forEach((group) => {
+    const boxes = Array.from(group.querySelectorAll('input[name="book_ids"]'));
+    const selectAll = group.querySelector(".author-select-all input");
+    if (!selectAll || boxes.length === 0) return;
+    const checkedCount = boxes.filter((cb) => cb.checked).length;
+    selectAll.checked = checkedCount === boxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  });
+}
+
+function copyBundleField(id, btn) {
+  const el = document.getElementById(id);
+  navigator.clipboard.writeText(el.value).then(() => {
+    const original = btn.textContent;
+    btn.textContent = "Copiado!";
+    setTimeout(() => { btn.textContent = original; }, 1200);
+  });
+}
+
+function prepareBundlePhotos(btn) {
+  const ids = Array.from(document.querySelectorAll('input[name="book_ids"]:checked')).map((cb) => cb.value);
+  if (ids.length === 0) {
+    alert("Seleciona pelo menos um livro.");
+    return;
+  }
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "A criar...";
+  const formData = new FormData();
+  ids.forEach((id) => formData.append("book_ids", id));
+  fetch("/bundle/prepare-photos", { method: "POST", body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      document.getElementById("bundle-photos-dir").value = data.path;
+      return navigator.clipboard.writeText(data.path);
+    })
+    .then(() => { btn.textContent = "Copiado!"; })
+    .catch(() => { btn.textContent = original; })
+    .finally(() => {
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    });
+}
+
+function confirmMarkPlatforms() {
+  const count = document.querySelectorAll('input[name="book_ids"]:checked').length;
+  if (count === 0) {
+    alert("Seleciona pelo menos um livro.");
+    return false;
+  }
+  return confirm(`Marcar ${count} livro(s) como publicado(s) na(s) plataforma(s) escolhida(s)?`);
+}
+
+regenerateBundleText();
+</script>
+{% endblock %}

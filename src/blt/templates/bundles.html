@@ -1,0 +1,78 @@
+{% extends "_base.html" %}
+{% block title %}blt - stock lotes{% endblock %}
+{% block extra_style %}
+  .bundle-card { margin-bottom: 1.5rem; }
+  .bundle-card-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .bundle-card-title { font-weight: 700; font-size: 1rem; }
+  .bundle-card-meta { color: var(--muted); font-size: 0.85rem; }
+  .bundle-card-progress { font-size: 0.85rem; color: var(--muted); }
+  .bundle-card-progress strong { color: #1a1a1a; }
+
+  .platform-icon { width: 12px; height: 12px; }
+  .platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #eef1f4;
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    margin-right: 0.3rem;
+  }
+
+  .bundle-item-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .bundle-item-row { display: flex; align-items: center; gap: 0.6rem; }
+  .bundle-item-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); flex: 0 0 auto; }
+  .bundle-item-title { font-weight: 600; font-size: 0.9rem; }
+  .bundle-item-meta { color: var(--muted); font-size: 0.8rem; }
+  .bundle-item-status { margin-left: auto; font-size: 0.78rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+  .bundle-item-status.disponivel { background: #e6f6ea; color: var(--green-dark); }
+  .bundle-item-status.vendido { background: #fff1f0; color: #9a6a6a; }
+  .bundle-item-status.removido { background: #f1f1f1; color: var(--muted); }
+{% endblock %}
+{% block content %}
+<header class="page-header">
+  <h1>Stock Lotes</h1>
+  <p class="subtitle">Histórico dos lotes publicados a partir de <a href="/bundle">Criar Lotes</a> - o estado de cada livro é sempre o atual (vender um livro à parte reflete aqui automaticamente).</p>
+</header>
+
+{% if not bundles %}
+<div class="card">
+  <p>Ainda não publicaste nenhum lote.</p>
+</div>
+{% else %}
+{% for bundle in bundles %}
+<div class="card bundle-card">
+  <div class="bundle-card-header">
+    <div>
+      <div class="bundle-card-title">{{ bundle.title or "Lote #" ~ bundle.id }}</div>
+      <div class="bundle-card-meta">
+        {{ bundle.created_at.strftime("%Y-%m-%d %H:%M") }}
+        {% for slug in bundle.platform_slugs %}
+        {% set p = platform_by_slug.get(slug) %}
+        <span class="platform-badge">{% if p %}<img src="{{ p.icon_url }}" alt="" class="platform-icon" onerror="this.style.display='none'">{{ p.name }}{% else %}{{ slug }}{% endif %}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="bundle-card-progress"><strong>{{ bundle.available_count }}</strong> de <strong>{{ bundle.total_count }}</strong> ainda disponível(eis)</div>
+  </div>
+  <div class="bundle-item-list">
+    {% for item in bundle.books %}
+    <div class="bundle-item-row">
+      {% if item.photo_url %}<img src="{{ item.photo_url }}" alt="" class="bundle-item-thumb" onerror="this.remove()">{% endif %}
+      <div>
+        <div class="bundle-item-title">{{ item.title or "Sem título" }}</div>
+        <div class="bundle-item-meta">{% if item.author %}{{ item.author }} - {% endif %}{{ "%.2f"|format(item.price) if item.price is not none else "-" }} &euro;</div>
+      </div>
+      <span class="bundle-item-status {{ item.status }}">
+        {% if item.status == "disponivel" %}Disponível{% elif item.status == "vendido" %}Vendido{% else %}Removido{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,12 +1,13 @@
 import os
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
 
 from blt import review_app
-from blt.models import Book, BookPlatform, Sale
+from blt.models import Book, BookPlatform, Bundle, Sale
 from blt.review_app import app
 
 client = TestClient(app)
@@ -1289,6 +1290,14 @@ def test_stock_list_shows_available_books(temp_db):
     assert ">3<" in r.text
 
 
+def test_stock_list_shows_a_cover_thumbnail_per_book(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_thumb", title="Thumbnail Book", status="available")
+
+    r = client.get("/stock")
+
+    assert f'src="/photo/{book_id}/cover.jpg" alt="" class="stock-thumb"' in r.text
+
+
 def test_stock_edit_price_field_uses_whole_euro_stepper_not_native_spin(temp_db):
     book_id = _add_book(temp_db, folder_path="book_avail", title="Available Book", status="available", price=6.0)
 
@@ -1831,6 +1840,353 @@ def test_sold_out_book_stays_visible_marked_unsellable_and_sorted_last(temp_db):
     assert "Esgotado" in r.text
     # sold-out sorts after available even though "Gone" < "Zzz..." alphabetically
     assert r.text.index("Zzz Still Here") < r.text.index("Gone")
+
+
+# -------- Bundle listings --------
+
+def test_bundle_page_groups_available_books_by_author(temp_db):
+    _add_book(temp_db, folder_path="book_b1", status="available", title="Zeta", author="Author A", price=5.0)
+    _add_book(temp_db, folder_path="book_b2", status="available", title="Alpha", author="Author A", price=6.0)
+    _add_book(temp_db, folder_path="book_b3", status="available", title="Beta", author="Author B", price=7.0)
+
+    r = client.get("/bundle")
+
+    assert "Author A" in r.text
+    assert "Author B" in r.text
+    assert 'data-title="Zeta"' in r.text
+    assert 'data-title="Beta"' in r.text
+
+
+def test_bundle_page_excludes_non_available_books(temp_db):
+    _add_book(temp_db, folder_path="book_pending", status="pending", title="Pending Book")
+    _add_book(temp_db, folder_path="book_sold", status="sold_out", quantity=0, title="Sold Out Book")
+    _add_book(temp_db, folder_path="book_avail", status="available", title="Available Book", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Available Book" in r.text
+    assert "Pending Book" not in r.text
+    assert "Sold Out Book" not in r.text
+
+
+def test_bundle_page_shows_no_author_bucket_for_missing_author(temp_db):
+    _add_book(temp_db, folder_path="book_noauthor", status="available", title="Mystery", author=None, price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Autor desconhecido" in r.text
+
+
+def test_bundle_page_empty_stock_shows_placeholder(temp_db):
+    r = client.get("/bundle")
+
+    assert "Ainda não há livros em stock disponível para agrupar." in r.text
+    assert '<input type="checkbox" name="book_ids"' not in r.text
+
+
+def test_bundle_page_platform_checkboxes_exclude_vinted(temp_db):
+    _add_book(temp_db, folder_path="book_b4", status="available", title="Solo", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'name="platforms" value="olx"' in r.text
+    assert 'name="platforms" value="marketplace"' in r.text
+    assert 'name="platforms" value="vinted"' not in r.text
+
+
+def test_bundle_page_shows_select_all_checkbox_per_author(temp_db):
+    _add_book(temp_db, folder_path="book_b5", status="available", title="Solo", author="Some Author", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'class="author-select-all"' in r.text
+    assert 'onchange="toggleAuthorGroup(this)"' in r.text
+
+
+def test_bundle_page_has_generated_title_field_wired(temp_db):
+    _add_book(temp_db, folder_path="book_b5b", status="available", title="Solo", author="Some Author", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert 'id="bundle-title"' in r.text
+    assert "function computeBundleTitle(books, sharedAuthor)" in r.text
+    assert "copyBundleField('bundle-title', this)" in r.text
+    # mixed-author selections cap the title at 2 author names, not more
+    assert "authors.slice(0, 2)" in r.text
+    assert "e outros" in r.text
+
+
+def test_bundle_page_shows_existing_platform_badge_on_an_already_bundled_book(temp_db):
+    _add_book(
+        temp_db, folder_path="book_b6", status="available", title="Already Posted", price=5.0,
+        platforms=["olx"],
+    )
+
+    r = client.get("/bundle")
+
+    # the book still appears in the picker - it's just labeled, never hidden -
+    # and its existing platform shows up as a badge, matching /stock's badges.
+    assert "Already Posted" in r.text
+    assert 'name="book_ids" value=' in r.text
+    assert '<span class="platform-badge">' in r.text
+    assert "OLX" in r.text
+
+
+def test_bundle_page_book_with_no_platforms_shows_no_badge(temp_db):
+    _add_book(temp_db, folder_path="book_b7", status="available", title="Never Posted", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Never Posted" in r.text
+    assert '<span class="platform-badge">' not in r.text
+
+
+def test_bundle_mark_platforms_adds_without_removing_existing(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_mark1", status="available", title="Marked", price=5.0, platforms=["vinted"]
+    )
+
+    r = client.post(
+        "/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]}, follow_redirects=False
+    )
+
+    assert r.status_code == 303
+    with temp_db() as s:
+        slugs = {bp.platform for bp in s.get(Book, book_id).platforms}
+    assert slugs == {"vinted", "olx"}
+
+
+def test_bundle_mark_platforms_skips_non_available_books(temp_db):
+    pending_id = _add_book(temp_db, folder_path="book_mark2", status="pending", title="Pending")
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [pending_id], "platforms": ["olx"]})
+
+    with temp_db() as s:
+        assert s.get(Book, pending_id).platforms == []
+
+
+def test_bundle_mark_platforms_ignores_unknown_platform_slug(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_mark3", status="available", title="Unknown Slug", price=5.0)
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["not-a-real-platform"]})
+
+    with temp_db() as s:
+        assert s.get(Book, book_id).platforms == []
+
+
+def test_bundle_mark_platforms_redirects_with_marked_count_shown(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_mark4", status="available", title="Count Me", price=5.0)
+
+    r = client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]}, follow_redirects=True)
+
+    assert "1 livro(s) marcado(s)" in r.text
+
+
+def test_bundle_page_has_photos_folder_button_wired(temp_db):
+    _add_book(temp_db, folder_path="book_photos_btn", status="available", title="Solo", price=5.0)
+
+    r = client.get("/bundle")
+
+    assert "Criar e copiar pasta de capas" in r.text
+    assert "function prepareBundlePhotos(btn)" in r.text
+    assert "navigator.clipboard.writeText(data.path)" in r.text
+    assert 'id="bundle-photos-dir"' in r.text
+
+
+# -------- Bundle temp cover-photo folder --------
+
+def _make_book_cover(folder, data=b"fake-jpeg-bytes"):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "cover.jpg").write_bytes(data)
+
+
+def test_cleanup_stale_bundle_tmp_dirs_removes_old_but_keeps_fresh_and_unrelated(tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+    old = tmp_path / "bundle_stale"
+    fresh = tmp_path / "bundle_fresh"
+    unrelated = tmp_path / "not_ours"
+    old.mkdir()
+    fresh.mkdir()
+    unrelated.mkdir()
+    long_ago = time.time() - 7200
+    os.utime(old, (long_ago, long_ago))
+    os.utime(unrelated, (long_ago, long_ago))
+
+    review_app._cleanup_stale_bundle_tmp_dirs()
+
+    assert not old.exists()
+    assert fresh.exists()
+    assert unrelated.exists()  # old, but not ours to touch - wrong prefix
+
+
+def test_new_bundle_tmp_dir_tracks_itself_as_pending(tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+
+    created = review_app._new_bundle_tmp_dir()
+
+    assert review_app._pending_bundle_tmp_dir == created
+
+
+def test_bundle_prepare_photos_copies_selected_available_book_covers(temp_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+    monkeypatch.setattr(review_app.settings, "GROUPED_DIR", str(tmp_path))
+    folder = tmp_path / "book_cover_src"
+    _make_book_cover(folder)
+    book_id = _add_book(temp_db, folder_path=str(folder), status="available", title="A Villa", price=5.0)
+
+    r = client.post("/bundle/prepare-photos", data={"book_ids": [book_id]})
+
+    assert r.status_code == 200
+    created = Path(r.json()["path"])
+    assert created.is_dir()
+    files = list(created.iterdir())
+    assert len(files) == 1
+    assert files[0].name == "01.jpg"
+
+
+def test_bundle_prepare_photos_skips_non_available_and_missing_cover(temp_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+    pending_id = _add_book(temp_db, folder_path="book_prep_pending", status="pending", title="Pending")
+    no_cover_id = _add_book(
+        temp_db, folder_path=str(tmp_path / "book_no_cover"), status="available", title="No Cover", price=5.0
+    )
+
+    r = client.post("/bundle/prepare-photos", data={"book_ids": [pending_id, no_cover_id]})
+
+    created = Path(r.json()["path"])
+    assert created.is_dir()
+    assert list(created.iterdir()) == []
+
+
+def test_bundle_prepare_photos_runs_stale_cleanup_as_a_side_effect(temp_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(review_app, "_bundle_tmp_root", lambda: tmp_path)
+    stale = tmp_path / "bundle_ancient"
+    stale.mkdir()
+    long_ago = time.time() - 7200
+    os.utime(stale, (long_ago, long_ago))
+
+    client.post("/bundle/prepare-photos", data={"book_ids": []})
+
+    assert not stale.exists()
+
+
+def test_bundle_mark_platforms_deletes_the_pending_tmp_dir(temp_db, tmp_path, monkeypatch):
+    tmp_dir = tmp_path / "bundle_20260101_000000_000000"
+    tmp_dir.mkdir()
+    (tmp_dir / "01 - Book.jpg").write_bytes(b"x")
+    monkeypatch.setattr(review_app, "_pending_bundle_tmp_dir", tmp_dir)
+    book_id = _add_book(temp_db, folder_path="book_cleanup", status="available", title="Cleanup Me", price=5.0)
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
+
+    assert not tmp_dir.exists()
+    assert review_app._pending_bundle_tmp_dir is None
+
+
+def test_bundle_mark_platforms_with_no_pending_tmp_dir_does_nothing(temp_db):
+    # default state (nothing created via "Criar e copiar pasta de capas" this
+    # session) - marking platforms must not error just because there's
+    # nothing to clean up.
+    book_id = _add_book(temp_db, folder_path="book_no_pending", status="available", title="No Pending", price=5.0)
+
+    r = client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
+
+    assert r.status_code == 200  # redirect followed by the default TestClient behavior
+
+
+# -------- Bundle history (/bundles) --------
+
+def test_bundle_mark_platforms_creates_a_bundle_history_record(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_hist1", status="available", title="Historic", author="Jane Doe", price=6.0
+    )
+
+    client.post(
+        "/bundle/mark-platforms",
+        data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote de 1 livro - Jane Doe"},
+    )
+
+    with temp_db() as s:
+        bundle = s.execute(select(Bundle)).scalar_one()
+        assert bundle.title == "Lote de 1 livro - Jane Doe"
+        assert {bp.platform for bp in bundle.platforms} == {"olx"}
+        assert len(bundle.items) == 1
+        assert bundle.items[0].title == "Historic"
+        assert bundle.items[0].author == "Jane Doe"
+        assert bundle.items[0].price == 6.0
+
+
+def test_bundle_mark_platforms_with_no_platform_selected_creates_no_bundle_record(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist2", status="available", title="No Platform", price=6.0)
+
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id]})
+
+    with temp_db() as s:
+        assert s.execute(select(Bundle)).scalars().all() == []
+
+
+def test_bundle_history_page_lists_bundle_with_live_available_status(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist3", status="available", title="Still Here", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote X"})
+
+    r = client.get("/bundles")
+
+    assert "Lote X" in r.text
+    assert "Still Here" in r.text
+    assert "Disponível" in r.text
+    assert ">1</strong> de <strong>1</strong>" in r.text
+
+
+def test_bundle_history_reflects_an_individual_sale_automatically(temp_db):
+    book_id = _add_book(
+        temp_db, folder_path="book_hist4", status="available", quantity=1, title="Sell Me Solo", price=6.0
+    )
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote Y"})
+
+    client.post(f"/sold/{book_id}")  # sold individually via /stock, not through the bundle flow at all
+
+    r = client.get("/bundles")
+
+    assert "Sell Me Solo" in r.text
+    assert "Vendido" in r.text
+    assert ">0</strong> de <strong>1</strong>" in r.text
+
+
+def test_bundle_history_shows_removido_when_book_later_deleted(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist5", status="available", title="Gone Later", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"], "bundle_title": "Lote Z"})
+
+    client.post(f"/delete/{book_id}")
+
+    r = client.get("/bundles")
+
+    # the snapshot survives even though the Book row is gone
+    assert "Gone Later" in r.text
+    assert "Removido" in r.text
+
+
+def test_bundle_history_empty_state(temp_db):
+    r = client.get("/bundles")
+
+    assert "Ainda não publicaste nenhum lote." in r.text
+
+
+def test_sidebar_has_criar_lotes_and_stock_lotes(temp_db):
+    r = client.get("/")
+
+    assert "Criar Lotes" in r.text
+    assert 'href="/bundle"' in r.text
+    assert "Stock Lotes" in r.text
+    assert 'href="/bundles"' in r.text
+
+
+def test_sidebar_bundle_count_badge_reflects_published_lots(temp_db):
+    book_id = _add_book(temp_db, folder_path="book_hist6", status="available", title="Badge Test", price=6.0)
+    client.post("/bundle/mark-platforms", data={"book_ids": [book_id], "platforms": ["olx"]})
+
+    r = client.get("/")
+
+    assert "Stock Lotes</span><span class=\"badge\">1</span>" in r.text
 
 
 # -------- Discord notifications --------

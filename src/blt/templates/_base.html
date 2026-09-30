@@ -24,6 +24,9 @@
     --step-sorted: #2a78d6;
     --step-review: #eda100;
     --step-stock: #eda100;
+    /* Lotes isn't a pipeline stage (it doesn't move a book between
+       statuses) - teal keeps it visually distinct from every stage above. */
+    --step-bundle: #0c8599;
   }
   /* The current page's own step color, so the sidebar highlight, header
      accent, and primary buttons all pick it up automatically instead of
@@ -33,6 +36,8 @@
   body[data-step="sorted"] { --page-accent: var(--step-sorted); --page-accent-dark: #1e5fa8; }
   body[data-step="review"] { --page-accent: var(--step-review); --page-accent-dark: #c98600; }
   body[data-step="stock"] { --page-accent: var(--green); --page-accent-dark: var(--green-dark); }
+  body[data-step="bundle"] { --page-accent: var(--step-bundle); --page-accent-dark: #086277; }
+  body[data-step="bundles"] { --page-accent: var(--step-bundle); --page-accent-dark: #086277; }
   * { box-sizing: border-box; }
   html {
     /* Always reserve the vertical scrollbar's width, whether this page's
@@ -209,6 +214,8 @@
   .sidebar-item--sorted:hover { background: color-mix(in srgb, var(--step-sorted) 10%, white); }
   .sidebar-item--review:hover { background: color-mix(in srgb, var(--step-review) 10%, white); }
   .sidebar-item--stock:hover { background: color-mix(in srgb, var(--green) 10%, white); }
+  .sidebar-item--bundle:hover { background: color-mix(in srgb, var(--step-bundle) 10%, white); }
+  .sidebar-item--bundles:hover { background: color-mix(in srgb, var(--step-bundle) 10%, white); }
   .sidebar-item.active {
     background: color-mix(in srgb, var(--page-accent, var(--green)) 12%, white);
     color: var(--page-accent-dark, var(--green-dark));
@@ -286,6 +293,12 @@
     </a>
     <a class="sidebar-item sidebar-item--stock {{ 'active' if active_step == 'stock' else '' }}" href="/stock">
       <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Stock</span><span class="badge">{{ stock_count }}</span>
+    </a>
+    <a class="sidebar-item sidebar-item--bundle {{ 'active' if active_step == 'bundle' else '' }}" href="/bundle">
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> Criar Lotes</span><span class="badge">{{ stock_count }}</span>
+    </a>
+    <a class="sidebar-item sidebar-item--bundles {{ 'active' if active_step == 'bundles' else '' }}" href="/bundles">
+      <span class="sidebar-item-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg> Stock Lotes</span><span class="badge">{{ bundle_count }}</span>
     </a>
   </nav>
   <div class="content">

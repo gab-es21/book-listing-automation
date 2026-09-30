@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     PHOTOS_PER_BOOK: int = 2
     RAW_DIR: str = "photos_raw"
     GROUPED_DIR: str = "photos_grouped"
+    # Scratch space for /bundle's "Criar pasta de capas" - a uniquely-named
+    # subfolder of covers is created here per click, deleted again once you
+    # confirm the bundle (or, if that never happens, on the next click - see
+    # _cleanup_stale_bundle_tmp_dirs). Never anything worth keeping.
+    BUNDLE_TMP_DIR: str = "bundle_tmp"
     DB_URL: str = "sqlite:///./blt.db"
     TZ: str = "Europe/Lisbon"
 
@@ -37,3 +42,4 @@ class Settings(BaseSettings):
 settings = Settings()
 os.makedirs(settings.RAW_DIR, exist_ok=True)
 os.makedirs(settings.GROUPED_DIR, exist_ok=True)
+os.makedirs(settings.BUNDLE_TMP_DIR, exist_ok=True)
